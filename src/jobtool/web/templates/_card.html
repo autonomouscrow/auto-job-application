@@ -22,13 +22,97 @@
   <div class="breakdown">
     <table>
       {% for name, points in (detail.components or {}).items() %}
+      {% if detail.provisional %}
       <tr><td>{{ name }}</td><td class="n">{{ points }}</td></tr>
+      {% else %}
+      <tr><td>{{ name }}</td><td class="n">{{ points }} / {{ (detail.out_of or {}).get(name, '?') }}</td></tr>
+      {% endif %}
       {% endfor %}
     </table>
     {% if detail.matched_skills %}<div>Your skills named in the title: {{ detail.matched_skills|join(', ') }}</div>{% endif %}
-    {% if detail.provisional %}<div>From the title, term, and location only. The job description is not read yet.</div>{% endif %}
+    {% if detail.unread %}<div>{{ detail.unread }}</div>
+    {% elif detail.provisional %}<div>From the title, term, and location only. The job description is not read yet.</div>{% endif %}
   </div>
 </div>
+{% if req %}
+<section class="reading">
+  <h3>What it asks for</h3>
+  {% if req.summary %}<p class="summary">{{ req.summary }}</p>{% endif %}
+  {% for label, have, lack in [
+      ('Must have', detail.matched_must or [], detail.missing_must or []),
+      ('Nice to have', detail.matched_nice or [], detail.missing_nice or [])] %}
+  {% if have or lack %}
+  <div class="skills">
+    <span class="label">{{ label }}</span>
+    {% for name in have %}<span class="chip have" title="You list this skill.">{{ name }}</span>{% endfor %}
+    {% for name in lack %}<span class="chip lack" title="You do not list this skill.">{{ name }}</span>{% endfor %}
+  </div>
+  {% endif %}
+  {% endfor %}
+  {% if req.responsibilities %}
+  <ul class="duties">{% for item in req.responsibilities %}<li>{{ item }}</li>{% endfor %}</ul>
+  {% endif %}
+  {% set auth_labels = {
+      'sponsorship_available': 'Visa sponsorship is offered.',
+      'no_sponsorship': 'Visa sponsorship is not offered.',
+      'existing_right_to_work': 'You must already have the right to work there.',
+      'citizenship_required': 'Citizenship is required.',
+      'security_clearance': 'A security clearance is required.'} %}
+  {% set mode_labels = {'onsite': 'On site', 'hybrid': 'Hybrid', 'remote': 'Remote'} %}
+  <dl class="facts">
+    {% if req.season %}<dt>Term</dt><dd>{{ req.season }}</dd>{% endif %}
+    {% if req.start_date or req.end_date %}<dt>Dates</dt><dd>{{ req.start_date or 'not stated' }} to {{ req.end_date or 'not stated' }}</dd>{% endif %}
+    {% if req.duration_months %}<dt>Length</dt><dd>{{ req.duration_months }} month{{ 's' if req.duration_months != 1 }}</dd>{% endif %}
+    {% if req.work_mode in mode_labels %}<dt>Work mode</dt><dd>{{ mode_labels[req.work_mode] }}</dd>{% endif %}
+    {% if req.locations %}<dt>Locations</dt><dd>{{ req.locations|join('; ') }}</dd>{% endif %}
+    {% if req.pay %}<dt>Pay</dt><dd>{{ req.pay }}</dd>{% endif %}
+    {% if req.deadline %}<dt>Deadline</dt><dd>{{ req.deadline }}</dd>{% endif %}
+    {% if req.degree_levels %}<dt>Degrees</dt><dd>{{ req.degree_levels|join(', ') }}</dd>{% endif %}
+    {% if req.graduation_earliest or req.graduation_latest %}<dt>Graduation</dt><dd>
+      {%- if req.graduation_earliest and req.graduation_latest %}{{ req.graduation_earliest }} to {{ req.graduation_latest }}
+      {%- elif req.graduation_earliest %}{{ req.graduation_earliest }} or later
+      {%- else %}{{ req.graduation_latest }} or earlier{% endif -%}
+    </dd>{% endif %}
+    {% if req.work_authorization in auth_labels %}<dt>Work authorization</dt><dd>
+      {{ auth_labels[req.work_authorization] }}
+      {% if req.citizenship_countries %}Accepted: {{ req.citizenship_countries|join(', ') }}.{% endif %}
+      {% if req.work_authorization_quote %}<q>{{ req.work_authorization_quote }}</q>{% endif %}
+    </dd>{% endif %}
+    {% if req.application_extras %}<dt>Also asks for</dt><dd>{{ req.application_extras|join(', ') }}</dd>{% endif %}
+  </dl>
+  <h3>Why you fit</h3>
+  {% if req.relevance_reason %}<p>{{ req.relevance_reason }}</p>{% endif %}
+  <p class="note">Experience relevance {{ req.experience_relevance }}/10</p>
+  {% if relevant_facts %}
+  <ul class="duties">{% for fact in relevant_facts %}<li>{{ fact }}</li>{% endfor %}</ul>
+  {% endif %}
+  <form method="post" action="/job/{{ job.id }}/read" class="readline note">
+    Read {{ read.fetched_at.strftime('%b %d, %Y') if read.fetched_at else 'earlier' }}.
+    <button class="link">Read again</button>
+  </form>
+</section>
+{% elif read.status in ('unreadable', 'error') %}
+<div class="warnbox readline">
+  <span>The posting could not be read automatically.{% if read.error %} Reason: {{ read.error }}.{% endif %}</span>
+  <form method="post" action="/job/{{ job.id }}/read"><button class="small">Try again</button></form>
+</div>
+{% elif read.status == 'dead' %}
+<div class="warnbox">The employer's page says this job is closed.</div>
+{% elif read.status is none %}
+<div class="note readline">
+  <span>The job description has not been read yet.</span>
+  <form method="post" action="/job/{{ job.id }}/read"><button class="small">Read it now</button></form>
+</div>
+{% else %}
+<div class="note readline">
+  {% if read.requirements and not read.requirements.is_job_posting %}
+  <span>The page did not look like the description of a single job.</span>
+  {% else %}
+  <span>The page was fetched, but Claude has not read it yet.</span>
+  {% endif %}
+  <form method="post" action="/job/{{ job.id }}/read"><button class="small">Read again</button></form>
+</div>
+{% endif %}
 <div class="note">
   Listed by {{ job_sources|join(', ') or 'unknown source' }}.
   <a href="{{ job.url }}" target="_blank" rel="noopener" id="posting">Open the posting</a>

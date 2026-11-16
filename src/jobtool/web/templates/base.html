@@ -21,6 +21,17 @@
   <span class="note">Applied today: {{ counts.applied_today }}</span>
   <form method="post" action="/sync"><button class="small" title="Last sync: {{ last_sync or 'never' }}">Sync now</button></form>
 </header>
+{% if alert %}
+<div class="alert {{ 'alert-error' if alert.needs_action else 'alert-notice' }}" role="{{ 'alert' if alert.needs_action else 'status' }}">
+  <div class="alert-text">
+    <strong>{{ alert.title }}.</strong>
+    {% if alert.detail %}<span>{{ alert.detail }}</span>{% endif %}
+    <span>{{ alert.advice }}</span>
+    {% if alert.at %}<span class="note">Since {{ alert.at|replace('T', ' ') }}.</span>{% endif %}
+  </div>
+  <form method="post" action="/claude/check"><button class="small">Check again</button></form>
+</div>
+{% endif %}
 <main class="{% block mainclass %}{% endblock %}">
 {% if message %}<div class="flash">{{ message }}</div>{% endif %}
 {% block content %}{% endblock %}

@@ -49,6 +49,20 @@ class Ingest(Lenient):
 class Applicant(Lenient):
     # The degree you are studying for: "bachelor", "master", or "phd".
     degree: str = "bachelor"
+    year_of_study: int | None = None
+    # Expected graduation as "YYYY-MM". Postings that ask for another window are flagged.
+    graduation: str | None = None
+
+
+class Llm(Lenient):
+    # Reads job descriptions. A small, cheap model is enough.
+    reading_model: str = "claude-haiku-5-5"
+    # Writes resumes and cover letters.
+    writing_model: str = "claude-opus-5-5"
+    # How many jobs at the front of the queue are read before you reach them.
+    read_ahead: int = 10
+    # A posting is fetched again after this many days, to notice that it closed.
+    refresh_days: int = 4
 
 
 class SourceConfig(Lenient):
@@ -68,6 +82,7 @@ class Config(Lenient):
     targets: Targets = Field(default_factory=Targets)
     ingest: Ingest = Field(default_factory=Ingest)
     applicant: Applicant = Field(default_factory=Applicant)
+    llm: Llm = Field(default_factory=Llm)
     sources: list[SourceConfig] = Field(default_factory=list)
 
 

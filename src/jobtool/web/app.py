@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import date
+import logging
+import threading
+from datetime import date, datetime
 from pathlib import Path
 
 from fastapi import FastAPI, Form, HTTPException, Request
@@ -11,9 +13,11 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
 
-from jobtool import db, maintenance, queue
+from jobtool import db, llm, maintenance, queue
 from jobtool.config import SourceConfig, load_config, save_sources
 from jobtool.db import Application, Listing, ListingSource, Source
+from jobtool.enrich import run as reading_run
+from jobtool.enrich.posting import Getter, http_get
 from jobtool.ingest import registry
 from jobtool.ingest.base import ParseError
 from jobtool.paths import profile_dir
@@ -21,6 +25,7 @@ from jobtool.profile.loader import ProfileError, load_profile
 from jobtool.sync import ensure_sources, sync_all
 
 HERE = Path(__file__).parent
+log = logging.getLogger("jobtool")
 LISTS = {
     "set-aside": (
         db.SET_ASIDE,
@@ -40,8 +45,29 @@ LISTS = {
 }
 
 
-def create_app(home: Path, engine=None) -> FastAPI:
+def create_app(
+    home: Path,
+    engine=None,
+    *,
+    reading: bool = False,
+    background: bool = False,
+    get: Getter = http_get,
+    reader_factory: reading_run.ReaderFactory | None = None,
+) -> FastAPI:
+    """Build the app.
+
+    ``reading`` makes the queue fetch and read a posting before showing it.
+    ``background`` also reads the next few jobs on a worker thread. Both are off
+    by default so tests never touch the network.
+    """
     engine = engine or db.open_engine(home)
+    # One posting is fetched at a time, whether for the page or in the background.
+    reading_lock = threading.Lock()
+
+    def make_reader(session: Session):
+        if reader_factory is not None:
+            return reader_factory(session)
+        return reading_run.make_reader(session, home, load_config(home).llm.reading_model)
     templates = Jinja2Templates(directory=HERE / "templates")
     app = FastAPI(title="jobtool", docs_url=None, redoc_url=None)
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
@@ -66,6 +92,7 @@ def create_app(home: Path, engine=None) -> FastAPI:
             counts=queue.counts(session),
             last_sync=db.get_meta(session, "last_sync"),
             message=request.query_params.get("message", ""),
+            alert=llm.current_alert(session, home),
             statuses=db.STATUSES,
         )
         return templates.TemplateResponse(request, template, context)
@@ -95,8 +122,23 @@ def create_app(home: Path, engine=None) -> FastAPI:
         if listing is None:
             return {"job": None}
         repeat = session.get(Listing, listing.repeat_of) if listing.repeat_of else None
+        read = reading_run.read_state(session, listing)
+        requirements = read["requirements"]
+        profile = profile_or_none()
+        facts = profile.facts() if profile else {}
         return {
             "job": listing,
+            # What was fetched from the employer's page: status, error, fetched_at.
+            "read": read,
+            # The extracted requirements (jobtool.enrich.requirements.Extracted), or None.
+            "req": requirements if requirements and requirements.is_job_posting else None,
+            # Profile facts the model picked as the best support for this job.
+            "relevant_facts": [
+                facts[fact_id].text
+                for fact_id in (requirements.relevant_fact_ids if requirements else [])
+                if fact_id in facts
+            ],
+            "reading": reading,
             "job_sources": sources_for(session, listing),
             "repeat": repeat,
             "application": session.exec(
@@ -104,12 +146,99 @@ def create_app(home: Path, engine=None) -> FastAPI:
             ).first(),
         }
 
+    # ----- reading postings ----------------------------------------------
+
+    def read_one(session: Session, listing: Listing, *, force: bool = False) -> None:
+        """Fetch and read one posting. A Claude failure becomes the banner, not an error."""
+        with reading_lock:
+            session.refresh(listing)
+            config = load_config(home)
+            reader = make_reader(session)
+            if not force and not reading_run.pending(
+                session, listing, config, have_reader=reader is not None, at=datetime.now()
+            ):
+                return
+            try:
+                reading_run.enrich_listing(
+                    session, listing, config=config, profile=profile_or_none(), reader=reader,
+                    get=get, force=force,
+                )  # fmt: skip
+            except llm.LlmProblem:
+                pass  # already recorded for the banner
+
+    def next_read(session: Session, state: str) -> Listing | None:
+        """The next job, read first. Reading can filter a job out, so look again."""
+        listing = queue.next_listing(session, state)
+        if not reading:
+            return listing
+        for _ in range(4):
+            if listing is None:
+                return None
+            read_one(session, listing)
+            following = queue.next_listing(session, state)
+            if following is None or following.id == listing.id:
+                return following
+            listing = following
+        return listing
+
+    ahead_running = threading.Lock()
+
+    def read_ahead() -> None:
+        """Read the next few jobs, one at a time, so a page never waits on the whole batch."""
+        if not ahead_running.acquire(blocking=False):
+            return  # already under way
+        try:
+            for _ in range(max(load_config(home).llm.read_ahead * 4, 4)):
+                with reading_lock, Session(engine) as session:
+                    result = reading_run.enrich_queue(
+                        session, config=load_config(home), profile=profile_or_none(),
+                        reader=make_reader(session), get=get, budget=1,
+                    )  # fmt: skip
+                if result.attempted == 0 or result.problem is not None:
+                    break
+        except Exception:  # noqa: BLE001 - a background failure must not take the app down
+            log.exception("reading ahead failed")
+        finally:
+            ahead_running.release()
+
+    def kick() -> None:
+        if background:
+            threading.Thread(target=read_ahead, daemon=True).start()
+
+    if background:
+
+        def startup_check() -> None:
+            try:
+                with Session(engine) as session:
+                    if llm.load_key(home):
+                        llm.check_now(session, home, load_config(home).llm.reading_model)
+            except Exception:  # noqa: BLE001
+                log.exception("the API key check failed")
+            read_ahead()
+
+        threading.Thread(target=startup_check, daemon=True).start()
+
+    @app.post("/job/{listing_id}/read")
+    def read_now(request: Request, listing_id: int):
+        with Session(engine) as session:
+            read_one(session, get_listing(session, listing_id), force=True)
+        return back(request)
+
+    @app.post("/claude/check")
+    def check_claude(request: Request):
+        with Session(engine) as session:
+            if not llm.load_key(home):
+                return back(request, message="No+API+key+found+yet")
+            problem = llm.check_now(session, home, load_config(home).llm.reading_model)
+        kick()
+        return back(request, message="Claude+is+working" if problem is None else "")
+
     # ----- queue ---------------------------------------------------------
 
     @app.get("/", response_class=HTMLResponse)
     def main_queue(request: Request):
         with Session(engine) as session:
-            listing = queue.next_listing(session, db.MAIN)
+            listing = next_read(session, db.MAIN)
             return render(
                 request, "queue.html", session, mode="main", **card_context(session, listing)
             )
@@ -117,7 +246,7 @@ def create_app(home: Path, engine=None) -> FastAPI:
     @app.get("/set-aside/work", response_class=HTMLResponse)
     def set_aside_queue(request: Request):
         with Session(engine) as session:
-            listing = queue.next_listing(session, db.SET_ASIDE)
+            listing = next_read(session, db.SET_ASIDE)
             return render(
                 request, "queue.html", session, mode="set-aside", **card_context(session, listing)
             )
@@ -138,6 +267,7 @@ def create_app(home: Path, engine=None) -> FastAPI:
                 queue.back_to_main(session, listing)
             else:
                 raise HTTPException(404, "Unknown action")
+        kick()
         return back(request)
 
     @app.post("/undo")
@@ -287,6 +417,7 @@ def create_app(home: Path, engine=None) -> FastAPI:
     def sync_now(request: Request):
         with Session(engine) as session:
             result = sync_all(session, load_config(home), profile_or_none())
+        kick()
         failed = sum(1 for source in result.sources if source.error)
         message = f"Synced: {result.new} new" + (f", {failed} source(s) failed" if failed else "")
         return back(request, message=message.replace(" ", "+"))

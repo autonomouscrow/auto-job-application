@@ -138,8 +138,52 @@ def _profile_or_none(home: Path):
         return None
 
 
+def _report_problem(problem) -> None:
+    from jobtool import llm
+
+    typer.secho(f"Claude: {llm.TITLES[problem.kind]}.", fg=typer.colors.RED, err=True)
+    if problem.detail:
+        typer.echo(f"  {problem.detail}", err=True)
+    typer.echo(f"  {llm.ADVICE[problem.kind]}", err=True)
+
+
+def _read_ahead(home_dir: Path, limit: int | None) -> None:
+    from sqlmodel import Session
+
+    from jobtool import db
+    from jobtool.config import load_config
+    from jobtool.enrich import run
+
+    config = load_config(home_dir)
+    with Session(db.open_engine(home_dir)) as session:
+        reader = run.make_reader(session, home_dir, config.llm.reading_model)
+        if reader is None:
+            from jobtool import llm
+
+            alert = llm.current_alert(session, home_dir)
+            if alert:
+                typer.secho(f"Claude: {alert['title']}.", fg=typer.colors.RED, err=True)
+                typer.echo(f"  {alert['advice']}", err=True)
+            typer.echo("Checking that postings are still open, without reading them.")
+        result = run.enrich_queue(
+            session, config=config, profile=_profile_or_none(home_dir), reader=reader,
+            limit=limit,
+        )  # fmt: skip
+    typer.echo(
+        f"Fetched {result.fetched} posting(s): {result.read} read, {result.closed} closed, "
+        f"{result.unreadable} could not be read, {result.filtered} filtered out."
+    )
+    if result.problem:
+        _report_problem(result.problem)
+
+
 @app.command()
-def sync(home: HomeOption = None) -> None:
+def sync(
+    home: HomeOption = None,
+    read: Annotated[
+        bool, typer.Option("--read/--no-read", help="Read the postings at the front of the queue.")
+    ] = True,
+) -> None:
     """Fetch every source and update the queue."""
     from sqlmodel import Session
 
@@ -162,6 +206,69 @@ def sync(home: HomeOption = None) -> None:
                 f"  {source.slug}: {source.rows} rows, {source.new} new, {source.closed} closed"
             )
     typer.secho(f"{result.new} new listing(s).", fg=typer.colors.GREEN)
+    if read and result.sources:
+        _read_ahead(home_dir, None)
+
+
+@app.command()
+def enrich(
+    home: HomeOption = None,
+    limit: Annotated[
+        int | None, typer.Option(help="How many jobs at the front of the queue to read.")
+    ] = None,
+) -> None:
+    """Fetch and read the postings at the front of the queue, and score them fully."""
+    _read_ahead(_home_or_exit(home), limit)
+
+
+@app.command()
+def doctor(home: HomeOption = None) -> None:
+    """Check the setup: home folder, profile, database, and the Claude API key."""
+    from sqlmodel import Session, func, select
+
+    from jobtool import db, llm
+    from jobtool.config import load_config
+
+    home_dir = _home_or_exit(home)
+    good = typer.style("ok  ", fg=typer.colors.GREEN)
+    bad = typer.style("FAIL", fg=typer.colors.RED)
+    typer.echo(f"{good} home folder found")
+    try:
+        check = load_profile(profile_dir(home_dir))
+        typer.echo(f"{good} profile: {len(check.profile.facts())} facts")
+    except ProfileError as exc:
+        typer.echo(f"{bad} profile: {len(exc.problems)} problem(s). Run 'jobs profile check'.")
+    config = load_config(home_dir)
+    typer.echo(f"{good} config: {len(config.sources)} source(s)")
+    with Session(db.open_engine(home_dir)) as session:
+        listings = session.exec(select(func.count()).select_from(db.Listing)).one()
+        typer.echo(f"{good} database: {listings} listing(s)")
+        if not llm.load_key(home_dir):
+            typer.echo(f"{bad} Claude API key: not found")
+            typer.echo(f"     {llm.ADVICE[llm.MISSING_KEY]}")
+            raise typer.Exit(1)
+        typer.echo(f"{good} Claude API key: found (not shown)")
+        failed = False
+        for label, model in (
+            ("reading", config.llm.reading_model),
+            ("writing", config.llm.writing_model),
+        ):
+            problem = llm.check_now(session, home_dir, model)
+            if problem is None:
+                typer.echo(f"{good} {label} model {model}: reachable")
+            else:
+                failed = True
+                typer.echo(f"{bad} {label} model {model}: {llm.TITLES[problem.kind]}")
+                typer.echo(f"     {problem.detail} {llm.ADVICE[problem.kind]}".rstrip())
+                if problem.kind != llm.MODEL:
+                    break
+        rows = session.exec(select(db.Usage)).all()
+    if rows:
+        costs = [llm.cost_usd(row.model, row.input_tokens, row.output_tokens) for row in rows]
+        total = sum(cost for cost in costs if cost is not None)
+        typer.echo(f"     {len(rows)} Claude call(s) so far, about ${total:.2f}")
+    if failed:
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -186,7 +293,10 @@ def serve(
     typer.secho(f"Job queue running at {url}  (Ctrl+C to stop)", fg=typer.colors.GREEN)
     if open_browser:
         threading.Timer(1.0, webbrowser.open, args=[url]).start()
-    uvicorn.run(create_app(home_dir), host="127.0.0.1", port=port, log_level="warning")
+    uvicorn.run(
+        create_app(home_dir, reading=True, background=True),
+        host="127.0.0.1", port=port, log_level="warning",
+    )  # fmt: skip
 
 
 @app.command()

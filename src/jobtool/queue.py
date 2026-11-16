@@ -36,6 +36,14 @@ def next_listing(session: Session, state: str = db.MAIN) -> Listing | None:
     return session.exec(_ordered(state)).first()
 
 
+def head(session: Session, limit: int) -> list[Listing]:
+    """The jobs the user will see next: anything in progress, then the front of the queue."""
+    started = session.exec(
+        select(Listing).where(Listing.state == db.IN_PROGRESS).order_by(Listing.decided_at)
+    ).all()
+    return [*started, *session.exec(_ordered(db.MAIN).limit(limit)).all()]
+
+
 def listings_in(session: Session, state: str, *, open_only: bool = False) -> list[Listing]:
     query = select(Listing).where(Listing.state == state)
     if open_only:

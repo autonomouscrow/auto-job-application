@@ -31,3 +31,19 @@ def test_profile_facts_lists_ids(example_home: Path) -> None:
     result = runner.invoke(app, ["profile", "facts", "--home", str(example_home)])
     assert result.exit_code == 0
     assert "proj-orderbook.engine" in result.output
+
+
+def test_doctor_reports_a_missing_key(home: Path, monkeypatch) -> None:
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    result = runner.invoke(app, ["doctor", "--home", str(home)])
+    assert result.exit_code == 1
+    assert "Claude API key: not found" in result.output
+    assert ".env" in result.output
+
+
+def test_enrich_without_a_key_explains_and_carries_on(home: Path, monkeypatch) -> None:
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    result = runner.invoke(app, ["enrich", "--home", str(home)])
+    assert result.exit_code == 0
+    assert "No Claude API key" in result.output
+    assert "Fetched 0 posting(s)" in result.output

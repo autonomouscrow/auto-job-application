@@ -6,8 +6,10 @@ prepares a resume and cover letter that can only contain facts from your own
 profile, and keeps track of everything you have applied to.
 
 > **Status: early development.** Working today: reading sources, filtering,
-> the one-job-at-a-time queue, and the tracker. Reading job descriptions,
-> the full match score, and document tailoring are next (see the roadmap).
+> the one-job-at-a-time queue, the tracker, reading job postings, the full
+> match score, filters based on the job description, and alerts when the
+> Claude API key needs attention. Document tailoring is next (see the
+> roadmap).
 
 ## What it does
 
@@ -21,7 +23,8 @@ profile, and keeps track of everything you have applied to.
 - **Scores every job.** A 0 to 100 match score compares the job description
   with your skills and experience, with a visible breakdown of what matched
   and what is missing. Hard blockers such as citizenship requirements are
-  shown as flags instead of being buried in the number.
+  shown as flags or filtered out with the reason, instead of being buried in
+  the number. See "How the match score works" below.
 - **One job at a time.** New postings go to the front of the queue. For each
   one you choose **Apply**, **Set aside** (a separate queue for later), or
   **Reject** (never shown again).
@@ -81,6 +84,84 @@ job gets a small touch-up or a full retailor only when no archetype fits.
 | Resume output | LaTeX template compiled with Tectonic |
 | Tests | pytest |
 
+## How the match score works
+
+Each job gets a score from 0 to 100. Before its posting has been read, the
+score is a provisional one worked out from the title, term, and location,
+and the card says so. Once the posting has been read, the full score
+replaces it. It has six parts:
+
+| Part | Points | How it is worked out |
+|---|---|---|
+| Must-have skills | 40 | share of the posting's required skills that are on your skills list |
+| Nice-to-have skills | 15 | the same for the skills it lists as preferred |
+| Experience relevance | 20 | Claude rates from 0 to 10 how well your roles and projects fit the actual work |
+| Role type | 10 | 10 for one of your target roles, 5 for an adjacent role |
+| Eligibility | 10 | full marks unless a work authorization or graduation flag below lowers it |
+| Work mode | 5 | 5 for your first choice of onsite, hybrid, or remote, one less for each step down your list, 4 when the posting does not say |
+
+A posting that lists no skills of one kind gets 70% of those points.
+
+Some things are never turned into points. They either remove the job or
+put a flag on its card.
+
+These are **filters**. The job moves to **Filtered out** with the reason,
+and you can bring it back from there:
+
+- the posting is closed (its page is gone or says applications are closed)
+- the term or dates do not fit: it starts after your term ends, more than
+  45 days before it starts, names another season without giving dates, or
+  runs longer than your maximum length
+- it requires a language other than your working language, or is written in
+  another language
+- its location is outside your regions
+- it is only for a degree level other than yours
+- it requires citizenship of a country you are not a citizen of
+
+Most of these are also checked from what the source lists, before the
+posting is read.
+
+These are **flags**, shown on the card:
+
+- citizenship required without naming a country (eligibility drops to 0)
+- security clearance required (eligibility drops to 0)
+- you must already have the right to work there (eligibility at most 4)
+- no visa sponsorship offered
+- it wants graduation in a window that does not include yours (eligibility
+  at most 4)
+- it starts a little before your term or runs past its end
+- the application deadline ("apply by")
+
+Postings are read only for the jobs at the front of the queue, so time and
+money are not spent on jobs you may never reach. The `read_ahead` setting
+under `llm` in `config.yaml` says how many (10 by default). As you go
+through the queue, the jobs behind are read in turn. A posting is fetched
+again after `refresh_days` days (4 by default) to notice when it closes.
+
+## Setting up the Claude API key
+
+Reading postings needs a Claude API key.
+
+1. Create a key in the [Anthropic Console](https://console.anthropic.com)
+   under API keys.
+2. Put it in a file named `.env` inside your home folder, never in the
+   repository:
+
+   ```
+   ANTHROPIC_API_KEY=your-key
+   ```
+
+   `.env.example` in the repository shows the format.
+3. Run `uv run jobs doctor` to check that the key works.
+
+If the key is missing, expired, revoked, or out of credit, or Claude is rate
+limiting it, the app shows a banner that says which and what to do. In the
+meantime it keeps working: it still checks that postings are open and shows
+provisional scores.
+
+The models are set under `llm` in `config.yaml`. The default reading model
+is the small, cheap one, which costs a fraction of a cent per posting.
+
 ## Your data stays on your machine
 
 This repository contains code only. Everything personal lives in a separate
@@ -101,9 +182,14 @@ all tests and screenshots use that. If you fork this project, keep your own
 data out of the repository in the same way. A pre-commit hook is provided
 that refuses commits containing your name, email, or phone number.
 
-Job descriptions and the parts of your profile needed for a document are
-sent to the Claude API when requirements are extracted and documents are
-written. Nothing else leaves your machine.
+When a posting is read, the Claude API receives the posting's title,
+company, and text, plus these parts of your profile: your skills list, your
+degree and year of study, the titles and dates of your roles, the names and
+summaries of your projects, and the text of the facts under each of them. It
+never receives your name, email, phone, address, links, or the names of your
+school and employers. When documents are written (Phase 3), the parts of
+your profile needed for that document are sent too. Nothing else leaves your
+machine.
 
 ## Roadmap
 
@@ -111,7 +197,7 @@ written. Nothing else leaves your machine.
       profile, commit safeguards
 - [x] **Phase 1:** sources page and parsers, closed-job filtering, the
       one-job-at-a-time queue, tracker table, CSV export
-- [ ] **Phase 2:** posting fetch, requirements extraction, filters, full
+- [x] **Phase 2:** posting fetch, requirements extraction, filters, full
       match score
 - [ ] **Phase 3:** archetype resumes, tailoring, the verifier, cover letters
 - [ ] **Phase 4:** application assist panel and reusable answer bank
@@ -164,15 +250,20 @@ Other pages: **Tracker** (applications, status, follow-up dates, CSV export),
 each with its reason and a button to bring it back), and **Sources** (add a
 repository, preview what was parsed, turn sources on and off).
 
-Until job descriptions are read (Phase 2) the match score is provisional: it
-uses the title, term, and location only, and says so on the card.
+Once a posting has been read, the card shows what it asks for, which of the
+required and preferred skills you have and which you lack, a short reason for
+how well your experience fits, and whether the posting has been read yet or
+could not be read. Until then the score is provisional and the card says so.
 
 ### Commands
 
 | Command | What it does |
 |---|---|
 | `jobs serve` | starts the local web app (it listens on this computer only) |
-| `jobs sync` | fetches every source and updates the queue |
+| `jobs sync` | fetches every source, updates the queue, then reads the postings at the front of it |
+| `jobs sync --no-read` | the same without reading any postings |
+| `jobs enrich` | fetches and reads the postings at the front of the queue and scores them fully (`--limit N` sets how many) |
+| `jobs doctor` | checks the home folder, profile, database, and Claude API key, and shows what Claude has cost so far |
 | `jobs export FILE` | writes every application to a CSV file |
 | `jobs backup` | copies the database to `data/backups` (also done daily by `serve`) |
 | `jobs profile check` | validates the profile and lists every problem and warning |

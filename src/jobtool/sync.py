@@ -21,7 +21,8 @@ from sqlmodel import Session, select
 
 from jobtool import db
 from jobtool.config import Config, SourceConfig
-from jobtool.db import Listing, ListingSource, Source
+from jobtool.db import JobText, Listing, ListingSource, Requirements, Source
+from jobtool.enrich.requirements import Extracted
 from jobtool.ingest import registry
 from jobtool.ingest.base import ParseError, RawListing
 from jobtool.ingest.fetch import Fetched, FetchError
@@ -77,10 +78,35 @@ def ensure_sources(session: Session, config: Config) -> dict[str, Source]:
     return existing
 
 
-def _apply_assessment(listing: Listing, ctx: _Context) -> None:
-    # A listing can come from several sources. The verdict must not depend on which
-    # one happened to be read last, so it looks at all of them.
-    sources = [ctx.sources[source_id] for source_id in sorted(ctx.listed_by[listing.id])]
+def load_reads(session: Session) -> dict[int, tuple[Extracted | None, str | None]]:
+    """For every posting fetched so far: what was read from it, and the fetch status."""
+    reads: dict[int, tuple[Extracted | None, str | None]] = {}
+    for row in session.exec(select(JobText)).all():
+        reads[row.listing_id] = (None, row.status)
+    for row in session.exec(select(Requirements)).all():
+        status = reads.get(row.listing_id, (None, None))[1]
+        try:
+            reads[row.listing_id] = (Extracted.model_validate_json(row.data_json), status)
+        except ValueError:
+            continue  # written by an older version: it is read again when next fetched
+    return reads
+
+
+def apply_assessment(
+    listing: Listing,
+    sources: list[Source],
+    *,
+    config: Config,
+    profile: Profile | None,
+    today: date,
+    requirements: Extracted | None = None,
+    posting_status: str | None = None,
+) -> None:
+    """Score one listing and move it between the queue and the filtered list.
+
+    A listing can come from several sources. The verdict must not depend on which
+    one happened to be read last, so it looks at all of them.
+    """
     default_role = next((item.default_role for item in sources if item.default_role), None)
     result = assess(
         title=listing.title,
@@ -92,9 +118,11 @@ def _apply_assessment(listing: Listing, ctx: _Context) -> None:
         default_role=default_role,
         date_posted=listing.date_posted,
         source_marks_closed=any(registry.has_closed_marker(item.parser) for item in sources),
-        config=ctx.config,
-        profile=ctx.profile,
-        today=ctx.today,
+        config=config,
+        profile=profile,
+        today=today,
+        requirements=requirements,
+        posting_status=posting_status,
     )
     listing.role_type = result.role_type
     listing.score = result.score
@@ -106,6 +134,26 @@ def _apply_assessment(listing: Listing, ctx: _Context) -> None:
             listing.state, listing.state_reason = db.FILTERED, result.filter_reason
         else:
             listing.state, listing.state_reason = db.MAIN, None
+
+
+def sources_of(session: Session, listing_id: int) -> list[Source]:
+    return list(
+        session.exec(
+            select(Source)
+            .join(ListingSource, ListingSource.source_id == Source.id)
+            .where(ListingSource.listing_id == listing_id)
+            .order_by(Source.id)
+        ).all()
+    )
+
+
+def _apply_assessment(listing: Listing, ctx: _Context) -> None:
+    sources = [ctx.sources[source_id] for source_id in sorted(ctx.listed_by[listing.id])]
+    requirements, status = ctx.reads.get(listing.id, (None, None))
+    apply_assessment(
+        listing, sources, config=ctx.config, profile=ctx.profile, today=ctx.today,
+        requirements=requirements, posting_status=status,
+    )  # fmt: skip
 
 
 @dataclass
@@ -120,6 +168,7 @@ class _Context:
     links: dict[int, ListingSource] = field(default_factory=dict)
     sources: dict[int, Source] = field(default_factory=dict)
     listed_by: dict[int, set[int]] = field(default_factory=dict)
+    reads: dict[int, tuple[Extracted | None, str | None]] = field(default_factory=dict)
 
 
 def _find_repeat(session: Session, listing: Listing) -> int | None:
@@ -294,6 +343,7 @@ def sync_all(
     sources = ensure_sources(session, config)
     batch = int(db.get_meta(session, "batch", "0")) + 1
     ctx = _Context(config, profile, today or date.today(), batch, now())
+    ctx.reads = load_reads(session)
     result = SyncResult(batch=batch)
     for source in sources.values():
         if not source.enabled or (only and source.slug != only):

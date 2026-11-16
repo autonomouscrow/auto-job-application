@@ -7,7 +7,7 @@ from datetime import date
 from pathlib import Path
 
 from pydantic import NaiveDatetime
-from sqlalchemy import UniqueConstraint
+from sqlalchemy import UniqueConstraint, event
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 
 # Where a listing sits in the review flow.
@@ -120,6 +120,42 @@ class Event(SQLModel, table=True):
     undone: bool = False
 
 
+class JobText(SQLModel, table=True):
+    """The text of a posting as last fetched from the employer's site."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    listing_id: int = Field(foreign_key="listing.id", unique=True, index=True)
+    # "ok", "dead", "unreadable", or "error" (see jobtool.enrich.posting).
+    status: str
+    ats: str = "web"
+    fetched_at: NaiveDatetime
+    text: str = ""
+    content_hash: str = ""
+    error: str = ""
+
+
+class Requirements(SQLModel, table=True):
+    """What Claude read out of a posting. Redone only when the posting text changes."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    listing_id: int = Field(foreign_key="listing.id", unique=True, index=True)
+    content_hash: str
+    data_json: str
+    model: str
+    created_at: NaiveDatetime
+
+
+class Usage(SQLModel, table=True):
+    """One row per Claude API call, so spending can be shown."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    at: NaiveDatetime
+    purpose: str
+    model: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+
 class Meta(SQLModel, table=True):
     key: str = Field(primary_key=True)
     value: str
@@ -132,7 +168,15 @@ def db_path(home: Path) -> Path:
 def open_engine(home: Path):
     path = db_path(home)
     path.parent.mkdir(parents=True, exist_ok=True)
-    engine = create_engine(f"sqlite:///{path}", connect_args={"check_same_thread": False})
+    engine = create_engine(
+        f"sqlite:///{path}", connect_args={"check_same_thread": False, "timeout": 30}
+    )
+
+    @event.listens_for(engine, "connect")
+    def _pragmas(connection, _record):
+        # Lets the page you are looking at load while a background read is saving.
+        connection.execute("PRAGMA journal_mode=WAL")
+
     SQLModel.metadata.create_all(engine)
     return engine
 
