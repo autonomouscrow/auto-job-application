@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}Stats{% endblock %}
+{% block mainclass %}wide{% endblock %}
+{% macro money(value) -%}
+{%- if value is none -%}price not known
+{%- elif value == 0 -%}$0.00
+{%- elif value < 0.01 -%}${{ '%.4f'|format(value) }}
+{%- else -%}${{ '{:,.2f}'.format(value) }}{%- endif -%}
+{%- endmacro %}
+{% macro rate(value) -%}{{ '%d%%'|format(value) if value is not none else '-' }}{%- endmacro %}
+{% macro group_table(title, groups, labels={}) %}
+<div class="tablewrap">
+  <table class="rows">
+    <caption>{{ title }}</caption>
+    <tr><th></th><th class="n">Sent</th><th class="n">Heard back</th><th class="n">Interviews</th><th class="n">Rate</th></tr>
+    {% for group in groups %}
+    <tr>
+      <td>{{ labels.get(group.name, group.name) }}</td>
+      <td class="n">{{ group.applied }}</td>
+      <td class="n">{{ group.answered }}</td>
+      <td class="n">{{ group.interviews }}</td>
+      <td class="n">{{ rate(group.answer_rate) }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endmacro %}
+{% block content %}
+<div class="toolbar">
+  <div>
+    <h2>Stats</h2>
+    <div class="note">How the search is going, worked out from your applications each time you open this page.</div>
+  </div>
+</div>
+
+{% if not stats.total %}
+<div class="card empty">No applications yet. Once you press "I submitted it" on a job, your pace and answers show up here.</div>
+{% else %}
+
+<section class="card statcard">
+  <h3>Pace</h3>
+  <div class="tiles">
+    <div class="tile"><span class="big">{{ stats.total }}</span> sent in all</div>
+    <div class="tile"><span class="big">{{ stats.this_week }}</span> this week{% if stats.goal %}, goal {{ stats.goal }}{% endif %}</div>
+    <div class="tile"><span class="big">{{ '%.1f'|format(stats.average_per_week) }}</span> a week on average</div>
+  </div>
+  {% set counts_by_week = stats.weeks|map(attribute='count')|list %}
+  {% set top = [counts_by_week|max if counts_by_week else 0, stats.goal]|max %}
+  {% set top = top if top > 0 else 1 %}
+  <div class="chart" role="img" aria-label="Applications sent each week for the last {{ stats.weeks|length }} weeks{% if stats.goal %}, with a goal of {{ stats.goal }} a week{% endif %}">
+    <div class="plot">
+      {% if stats.goal %}<div class="goal" style="bottom: {{ (100 * stats.goal / top)|round(1) }}%"><span>Goal {{ stats.goal }}</span></div>{% endif %}
+      {% for week in stats.weeks %}
+      <div class="barcol{{ ' current' if week.current }}">
+        {% set height = (100 * week.count / top)|round(1) %}
+        <div class="bar" style="height: {{ height }}%"></div>
+        <span class="value" style="bottom: {{ height }}%">{{ week.count }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="axis">
+      {% for week in stats.weeks %}
+      <div class="{{ 'current' if week.current }}">{{ week.label }}{% if week.current %}<br><strong>This week</strong>{% endif %}</div>
+      {% endfor %}
+    </div>
+  </div>
+  <p class="note">Applications sent each week, Monday to Sunday, by the day you marked them sent.
+    {% if stats.goal %}The dashed line is your goal of {{ stats.goal }} a week (tracking.weekly_goal in config.yaml).{% endif %}</p>
+</section>
+
+<section class="card statcard">
+  <h3>Answers</h3>
+  <div class="tiles">
+    <div class="tile"><span class="big">{{ rate(stats.answer_rate) }}</span> heard back ({{ stats.reached.get('answered', 0) }} of {{ stats.total }})</div>
+    <div class="tile"><span class="big">{{ stats.reached.get('online assessment', 0) }}</span> got an online assessment</div>
+    <div class="tile"><span class="big">{{ stats.reached.get('interview', 0) }}</span> got an interview</div>
+    <div class="tile"><span class="big">{{ stats.reached.get('offer', 0) }}</span> got an offer</div>
+  </div>
+  <p class="note">
+    {% if stats.median_days_to_answer is not none %}
+    Half of the answers came within {{ stats.median_days_to_answer }} days of applying.
+    {% else %}
+    No answers with a date yet, so there is no typical wait to show.
+    {% endif %}
+    A stage counts once reached, even if the application moved on later.
+  </p>
+  <h4>Where they stand now</h4>
+  <div class="tablewrap narrow">
+    <table class="rows">
+      {% for status, count in stats.statuses.items() %}
+      <tr><td>{{ status|capitalize }}</td><td class="n">{{ count }}</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</section>
+
+<section class="card statcard">
+  <h3>What gets answers</h3>
+  <div class="grouptables">
+    {{ group_table('By kind of role', stats.by_role,
+       {'swe': 'Software', 'quant': 'Quant', 'adjacent': 'Adjacent', 'off-target': 'Off target'}) }}
+    {{ group_table('By source', stats.by_source) }}
+    <div>
+      {{ group_table('By resume', stats.by_resume) }}
+      <p class="note">With only a few applications in a row, the rates do not prove much either way.</p>
+    </div>
+  </div>
+</section>
+{% endif %}
+
+{% set found = stats.decisions.values()|sum %}
+{% if found %}
+{% set decision_labels = {
+  'main': 'Waiting in the queue',
+  'in_progress': 'Started, not sent yet',
+  'set_aside': 'Set aside',
+  'rejected': 'Rejected by you',
+  'applied': 'Applied',
+  'filtered': 'Filtered out automatically',
+} %}
+<section class="card statcard">
+  <h3>Every job found</h3>
+  <p class="note">What happened to the {{ found }} jobs the tool has found so far.</p>
+  <div class="tablewrap narrow">
+    <table class="rows">
+      {% for state, count in stats.decisions.items() %}
+      <tr><td>{{ decision_labels.get(state, state) }}</td><td class="n">{{ count }}</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% if stats.spend %}
+<section class="card statcard">
+  <h3>Claude spending</h3>
+  <div class="tiles">
+    <div class="tile"><span class="big">{{ money(stats.spend_total) }}</span> in all</div>
+    <div class="tile"><span class="big">{{ money(stats.spend_week) }}</span> in the last 7 days</div>
+  </div>
+  <div class="tablewrap">
+    <table class="rows">
+      <tr><th>Used for</th><th class="n">Calls</th><th class="n">Tokens in</th><th class="n">Tokens out</th><th class="n">Cost</th></tr>
+      {% for row in stats.spend %}
+      <tr>
+        <td>{{ row.purpose }}</td>
+        <td class="n">{{ row.calls }}</td>
+        <td class="n">{{ '{:,}'.format(row.input_tokens) }}</td>
+        <td class="n">{{ '{:,}'.format(row.output_tokens) }}</td>
+        <td class="n">{{ money(row.cost) }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+  <p class="note">An estimate in US dollars, from token counts and list prices. Your Anthropic bill is the real figure.
+    {% if stats.spend_unpriced %}{{ stats.spend_unpriced }} {{ 'call' if stats.spend_unpriced == 1 else 'calls' }} used a model with no known price, so the totals leave {{ 'it' if stats.spend_unpriced == 1 else 'them' }} out.{% endif %}</p>
+</section>
+{% endif %}
+{% endblock %}

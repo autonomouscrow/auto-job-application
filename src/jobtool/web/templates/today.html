@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Today{% endblock %}
+{% block content %}
+{% set headings = {
+  'deadline': 'Deadlines coming up',
+  'follow-up': 'Follow-ups due',
+  'unfinished': 'Applications you started',
+  'quiet': 'No news yet',
+} %}
+<div class="toolbar">
+  <div>
+    <h2>Today</h2>
+    <p class="pace">
+      {{ stats.this_week }} sent this week{% if stats.goal %}, goal {{ stats.goal }}.
+      {% if stats.this_week >= stats.goal %}Goal met.{% else %}
+      {% set per_day = stats.needed_per_day|round(0, 'ceil')|int %}
+      About {{ per_day }} a day for the {{ stats.days_left }} {{ 'day' if stats.days_left == 1 else 'days' }} left.
+      {% endif %}{% else %}.{% endif %}
+    </p>
+  </div>
+</div>
+
+{% if not reminders %}
+<div class="card empty">Nothing needs attention today.</div>
+{% else %}
+{% for kind, heading in headings.items() %}
+{% set group = reminders|selectattr('kind', 'equalto', kind)|list %}
+{% if group %}
+<section class="reminders" id="{{ kind }}">
+  <h3>{{ heading }} <span class="count">{{ group|length }}</span></h3>
+  <ul class="reminderlist">
+    {% for reminder in group %}
+    {% set job = reminder.listing %}
+    {% set application = reminder.application %}
+    <li class="reminder kind-{{ kind }}">
+      <div class="what">
+        <a href="/job/{{ job.id }}"><strong>{{ job.company }}</strong>: {{ job.title }}</a>
+        <div class="note">{{ reminder.text }}</div>
+      </div>
+      <div class="todo">
+        {% if application %}
+        <form method="post" action="/application/{{ application.id }}/snooze">
+          <input type="hidden" name="days" value="7"><button class="small">Remind me in a week</button>
+        </form>
+        <form method="post" action="/application/{{ application.id }}/snooze">
+          <input type="hidden" name="days" value="3"><button class="small">In 3 days</button>
+        </form>
+        {% if kind == 'follow-up' %}
+        <form method="post" action="/application/{{ application.id }}">
+          <input type="hidden" name="has_followup" value="1"><button class="small">Done</button>
+        </form>
+        {% endif %}
+        <a href="/job/{{ job.id }}">Update status or notes</a>
+        {% else %}
+        <a class="button small" href="/job/{{ job.id }}">Open the job</a>
+        {% endif %}
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endfor %}
+{% endif %}
+
+<p class="note">
+  An application with no news for {{ tracking.quiet_after_days }} days comes back here, and so does
+  a queued job whose deadline is {{ tracking.deadline_within_days }} days away or less.
+  Change these under tracking in config.yaml, as tracking.quiet_after_days and
+  tracking.deadline_within_days. Setting either to 0 turns it off.
+</p>
+{% endblock %}

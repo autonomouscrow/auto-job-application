@@ -302,7 +302,7 @@ def serve(
     if open_browser:
         threading.Timer(1.0, webbrowser.open, args=[url]).start()
     uvicorn.run(
-        create_app(home_dir, reading=True, background=True),
+        create_app(home_dir, reading=True, background=True, scheduled=True),
         host="127.0.0.1", port=port, log_level="warning",
     )  # fmt: skip
 
@@ -330,6 +330,82 @@ def backup(home: HomeOption = None) -> None:
 
     saved = maintenance.backup(_home_or_exit(home))
     typer.echo(f"Backed up to {saved}" if saved else "Nothing to do: already backed up today.")
+
+
+TASK_NAME = "jobtool-sync"
+
+
+def schedule_plan(home_dir: Path, repo: Path, at: str, windows: bool) -> tuple[Path, str, str]:
+    """The script to write, its text, and the command that registers a daily sync."""
+    log_file = home_dir / "data" / "sync.log"
+    if windows:
+        script = home_dir / "sync-task.cmd"
+        body = (
+            "@echo off\r\n"
+            f'cd /d "{repo}"\r\n'
+            f'uv run jobs sync --home "{home_dir}" >> "{log_file}" 2>&1\r\n'
+        )
+        command = f'schtasks /Create /F /SC DAILY /ST {at} /TN "{TASK_NAME}" /TR "\\"{script}\\""'
+    else:
+        script = home_dir / "sync-task.sh"
+        body = (
+            "#!/bin/sh\n"
+            f'cd "{repo}" || exit 1\n'
+            f'uv run jobs sync --home "{home_dir}" >> "{log_file}" 2>&1\n'
+        )
+        hour, minute = at.split(":")
+        line = f"{int(minute)} {int(hour)} * * * sh '{script}'"
+        command = f'(crontab -l 2>/dev/null; echo "{line}") | crontab -'
+    return script, body, command
+
+
+@app.command()
+def schedule(
+    home: HomeOption = None,
+    at: Annotated[str, typer.Option(help="Time of day to sync, as HH:MM.")] = "08:00",
+) -> None:
+    """Set up a daily sync that runs even when the app is closed.
+
+    Writes a small script into your home folder and prints the one command that
+    registers it with your system's scheduler. Nothing is registered for you.
+    """
+    import re
+    import sys
+
+    if not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", at):
+        typer.secho("The time must look like 08:00.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(2)
+    home_dir = _home_or_exit(home).resolve()
+    windows = sys.platform == "win32"
+    script, body, command = schedule_plan(home_dir, repo_root(), at, windows)
+    script.write_text(body, encoding="utf-8", newline="")
+    typer.echo(f"Wrote {script.name} to your home folder. To sync every day at {at}, run:")
+    typer.echo("")
+    typer.echo(f"  {command}")
+    typer.echo("")
+    if windows:
+        typer.echo(f'To stop it later:  schtasks /Delete /F /TN "{TASK_NAME}"')
+    typer.echo("Each run adds its output to data/sync.log in your home folder.")
+
+
+@app.command()
+def today(home: HomeOption = None) -> None:
+    """Show what needs attention: deadlines, follow-ups, and this week's pace."""
+    from sqlmodel import Session
+
+    from jobtool import db, insights
+    from jobtool.config import load_config
+
+    home_dir = _home_or_exit(home)
+    config = load_config(home_dir)
+    with Session(db.open_engine(home_dir)) as session:
+        numbers = insights.stats(session, config)
+        typer.echo(f"This week: {numbers.this_week} sent, goal {numbers.goal}.")
+        found = insights.reminders(session, config)
+        if not found:
+            typer.echo("Nothing needs attention today.")
+        for item in found:
+            typer.echo(f"  [{item.kind}] {item.listing.company}, {item.listing.title}: {item.text}")
 
 
 if __name__ == "__main__":

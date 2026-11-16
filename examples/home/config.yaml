@@ -37,6 +37,12 @@ resume:
   # options: {accent: "1F3A5F", font_size: 10, margin: 0.5, bold_highlights: true}
   projects_title: Projects
 
+tracking:
+  weekly_goal: 30                    # applications you aim to send each week
+  quiet_after_days: 14               # remind you about an application with no news this long; 0 = off
+  deadline_within_days: 5            # remind you about queued jobs whose deadline is this close; 0 = off
+  sync_every_hours: 6                # sync sources this often while the app is running; 0 = off
+
 guard:
   # Extra strings the commit guard should refuse, beyond name, email, and phone.
   extra_terms:

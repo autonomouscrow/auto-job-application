@@ -75,6 +75,17 @@ class Resume(Lenient):
     projects_title: str = "Projects"
 
 
+class Tracking(Lenient):
+    # Applications you aim to send each week, for the pace on the Stats page.
+    weekly_goal: int = 30
+    # An application with no news for this many days is brought up as a reminder. 0 turns it off.
+    quiet_after_days: int = 14
+    # A job in your queue whose deadline is this close is brought up. 0 turns it off.
+    deadline_within_days: int = 5
+    # While the app is running, sources are synced this often. 0 turns it off.
+    sync_every_hours: float = 6
+
+
 class SourceConfig(Lenient):
     repo: str
     branch: str = "HEAD"
@@ -94,6 +105,7 @@ class Config(Lenient):
     applicant: Applicant = Field(default_factory=Applicant)
     llm: Llm = Field(default_factory=Llm)
     resume: Resume = Field(default_factory=Resume)
+    tracking: Tracking = Field(default_factory=Tracking)
     sources: list[SourceConfig] = Field(default_factory=list)
 
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote_plus
 
@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
 
-from jobtool import assist, db, llm, maintenance, queue
+from jobtool import assist, db, insights, llm, maintenance, queue
 from jobtool.config import SourceConfig, load_config, save_sources
 from jobtool.db import Application, Archetype, JobAnswer, Listing, ListingSource, Source
 from jobtool.enrich import run as reading_run
@@ -55,6 +55,7 @@ def create_app(
     *,
     reading: bool = False,
     background: bool = False,
+    scheduled: bool = False,
     get: Getter = http_get,
     reader_factory: reading_run.ReaderFactory | None = None,
     writer_factory: reading_run.ReaderFactory | None = None,
@@ -63,6 +64,7 @@ def create_app(
 
     ``reading`` makes the queue fetch and read a posting before showing it.
     ``background`` also reads the next few jobs on a worker thread. Both are off
+    ``scheduled`` syncs the sources on a timer while the app runs. All are off
     by default so tests never touch the network.
     """
     engine = engine or db.open_engine(home)
@@ -107,6 +109,8 @@ def create_app(
             message=request.query_params.get("message", ""),
             alert=llm.current_alert(session, home),
             statuses=db.STATUSES,
+            # How many reminders are waiting on the Today page, for the badge in the menu.
+            reminder_count=insights.reminder_count(session, load_config(home)),
         )
         return templates.TemplateResponse(request, template, context)
 
@@ -709,7 +713,11 @@ def create_app(
         status: str = Form(""),
         notes: str = Form(None),
         next_followup: str = Form(None),
+        has_followup: str = Form(""),
     ):
+        # A cleared date field arrives as "missing", so forms that carry the date say so.
+        if has_followup and next_followup is None:
+            next_followup = ""
         with Session(engine) as session:
             application = session.get(Application, application_id)
             if application is None:
@@ -719,7 +727,7 @@ def create_app(
             if next_followup is not None:
                 try:
                     application.next_followup = (
-                        date.fromisoformat(next_followup) if next_followup else None
+                        date.fromisoformat(next_followup) if next_followup.strip() else None
                     )
                 except ValueError as exc:
                     raise HTTPException(400, "Follow-up must be a date") from exc
@@ -731,6 +739,48 @@ def create_app(
                 except ValueError as exc:
                     raise HTTPException(400, str(exc)) from exc
         return back(request, "/tracker")
+
+    @app.post("/application/{application_id}/snooze")
+    def snooze_application(request: Request, application_id: int, days: int = Form(7)):
+        """Ask to hear about this application again in a few days."""
+        with Session(engine) as session:
+            application = session.get(Application, application_id)
+            if application is None:
+                raise HTTPException(404, "No such application")
+            insights.snooze(session, application, min(max(days, 1), 90))
+        return back(request, "/today")
+
+    @app.get("/today", response_class=HTMLResponse)
+    def today_page(request: Request):
+        with Session(engine) as session:
+            config = load_config(home)
+            return render_page(
+                request, "today.html", session,
+                # jobtool.insights.Reminder: kind ("deadline", "follow-up", "unfinished",
+                # "quiet"), listing, text, due (date), application (or None). Most pressing first.
+                reminders=insights.reminders(session, config),
+                # jobtool.insights.Stats, for the week's pace line.
+                stats=insights.stats(session, config),
+                tracking=config.tracking,
+            )  # fmt: skip
+
+    @app.get("/board", response_class=HTMLResponse)
+    def board_page(request: Request):
+        with Session(engine) as session:
+            return render_page(
+                request, "board.html", session,
+                # {status: [(Application, Listing), ...]} in the order of db.STATUSES.
+                columns=insights.board(session), today=date.today(),
+            )  # fmt: skip
+
+    @app.get("/stats", response_class=HTMLResponse)
+    def stats_page(request: Request):
+        with Session(engine) as session:
+            config = load_config(home)
+            return render_page(
+                request, "stats.html", session,
+                stats=insights.stats(session, config), tracking=config.tracking,
+            )  # fmt: skip
 
     @app.get("/export.csv")
     def export():
@@ -799,10 +849,51 @@ def create_app(
         save_sources(home, config.sources)
         return RedirectResponse("/sources", status_code=303)
 
+    sync_lock = threading.Lock()
+
+    def run_sync():
+        with sync_lock, Session(engine) as session:
+            return sync_all(session, load_config(home), profile_or_none())
+
+    def sync_due(now: datetime) -> bool:
+        """True when the sources have not been synced for the configured time."""
+        hours = load_config(home).tracking.sync_every_hours
+        if hours <= 0:
+            return False
+        with Session(engine) as session:
+            last = db.get_meta(session, "last_sync_at")
+        try:
+            return now - datetime.fromisoformat(last) >= timedelta(hours=hours)
+        except ValueError:
+            return True  # never synced
+
+    def sync_if_due(now: datetime | None = None) -> bool:
+        if not sync_due(now or datetime.now()):
+            return False
+        try:
+            run_sync()
+        except Exception:  # noqa: BLE001 - a failed sync is tried again at the next check
+            log.exception("the scheduled sync failed")
+            return False
+        kick()
+        return True
+
+    app.state.sync_if_due = sync_if_due
+    stop_schedule = threading.Event()
+    app.state.stop_schedule = stop_schedule
+
+    if scheduled:
+
+        def schedule_loop() -> None:
+            # Checked every few minutes, so a laptop that slept catches up soon after waking.
+            while not stop_schedule.wait(300):
+                sync_if_due()
+
+        threading.Thread(target=schedule_loop, daemon=True).start()
+
     @app.post("/sync")
     def sync_now(request: Request):
-        with Session(engine) as session:
-            result = sync_all(session, load_config(home), profile_or_none())
+        result = run_sync()
         kick()
         failed = sum(1 for source in result.sources if source.error)
         message = f"Synced: {result.new} new" + (f", {failed} source(s) failed" if failed else "")

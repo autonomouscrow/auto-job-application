@@ -34,6 +34,7 @@
       <label>Status
         <select name="status">{% for status in statuses %}<option {{ 'selected' if status == application.status }}>{{ status }}</option>{% endfor %}</select>
       </label>
+      <input type="hidden" name="has_followup" value="1">
       <label>Follow up on <input type="date" name="next_followup" value="{{ application.next_followup or '' }}"></label>
     </div>
     <textarea name="notes" placeholder="Notes: contacts, what you sent, what they said">{{ application.notes }}</textarea>

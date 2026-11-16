@@ -229,6 +229,27 @@ puts everything you need to paste next to it:
 
 Answers kept for a job stay on its page, so you can see later what you sent.
 
+## Keeping track
+
+- **Today** lists what needs attention: queued jobs whose deadline is close,
+  follow-ups that are due, applications you started and did not mark as
+  sent, and applications with no news for two weeks. Each can be put off for
+  a few days with one click. `uv run jobs today` prints the same list.
+- **Board** shows your applications as columns by status. Drag a card to
+  another column, or use the menu on the card.
+- **Stats** shows applications per week against your weekly goal, how many
+  employers answered and how far each application got, the same broken down
+  by role type, source, and how the resume was made, and an estimate of what
+  the Claude API has cost.
+- **Syncing on its own.** While the app is open it syncs your sources every
+  six hours. To sync daily even when it is closed, run
+  `uv run jobs schedule --at 08:00`. It writes a small script into your home
+  folder and prints the one command that registers it with Windows Task
+  Scheduler (or cron). Nothing is registered for you.
+
+The goal, the reminder thresholds, and the sync interval are set under
+`tracking` in `config.yaml`.
+
 ## Setting up the Claude API key
 
 Reading postings needs a Claude API key.
@@ -297,7 +318,7 @@ and the question itself. Nothing else leaves your machine.
       match score
 - [x] **Phase 3:** archetype resumes, tailoring, the verifier, cover letters
 - [x] **Phase 4:** application assist panel and reusable answer bank
-- [ ] **Phase 5:** board view, stats, scheduled sync, reminders
+- [x] **Phase 5:** board view, stats, scheduled sync, reminders
 
 ## Getting started
 
@@ -341,7 +362,8 @@ The app shows one job at a time, newest finds first, then by match score.
 | Undo | `U` | reverses the last button press |
 | | `O` | opens the posting without starting an application |
 
-Other pages: **Tracker** (applications, status, follow-up dates, CSV export),
+Other pages: **Today**, **Board**, and **Stats** (see Keeping track),
+**Tracker** (applications, status, follow-up dates, CSV export),
 **Set aside**, **Rejected**, **Filtered out** (jobs removed automatically,
 each with its reason and a button to bring it back), and **Sources** (add a
 repository, preview what was parsed, turn sources on and off).
@@ -360,6 +382,8 @@ could not be read. Until then the score is provisional and the card says so.
 | `jobs sync --no-read` | the same without reading any postings |
 | `jobs enrich` | fetches and reads the postings at the front of the queue and scores them fully (`--limit N` sets how many) |
 | `jobs doctor` | checks the home folder, profile, database, and Claude API key, and shows what Claude has cost so far |
+| `jobs today` | lists deadlines, follow-ups due, and this week's pace |
+| `jobs schedule --at 08:00` | writes a daily sync script and prints the command that registers it |
 | `jobs export FILE` | writes every application to a CSV file |
 | `jobs backup` | copies the database to `data/backups` (also done daily by `serve`) |
 | `jobs profile check` | validates the profile and lists every problem and warning |

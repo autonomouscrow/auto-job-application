@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Board{% endblock %}
+{% block mainclass %}full{% endblock %}
+{% block content %}
+{% set total = columns.values()|map('length')|sum %}
+<div class="toolbar">
+  <div>
+    <h2>Board</h2>
+    <div class="note">Every application by where it stands. Move a card with its menu, or drag it to another column.</div>
+  </div>
+  <span class="spacer"></span>
+  <a class="button" href="/tracker">Tracker table and CSV export</a>
+</div>
+{% if not total %}
+<div class="card empty">No applications yet. Press "I submitted it" on a job to start tracking it.</div>
+{% else %}
+<div class="board">
+  {% for status, cards in columns.items() %}
+  <section class="column" data-status="{{ status }}">
+    <h3>{{ status|capitalize }} <span class="count">{{ cards|length }}</span></h3>
+    {% for application, job in cards %}
+    <article class="bcard" draggable="true">
+      <div class="bcompany">{{ job.company }}</div>
+      <a href="/job/{{ job.id }}">{{ job.title }}</a>
+      <div class="note">Applied {{ application.applied_at.strftime('%b %d') }}</div>
+      {% if application.next_followup %}
+      {% set due = application.next_followup <= today %}
+      <div class="note followup{{ ' due' if due }}">Follow up {{ application.next_followup.strftime('%b %d') }}{% if due %} (due){% endif %}</div>
+      {% endif %}
+      {% if application.notes %}<div class="bnotes">{{ application.notes.splitlines()[0] }}</div>{% endif %}
+      <form method="post" action="/application/{{ application.id }}" class="move">
+        <select name="status" aria-label="New status">
+          <option value="" selected>Move to</option>
+          {% for item in statuses if item != application.status %}<option>{{ item }}</option>{% endfor %}
+        </select>
+        <button class="small">Move</button>
+      </form>
+    </article>
+    {% else %}
+    <p class="none">None</p>
+    {% endfor %}
+  </section>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+// Drag a card onto another column: this sends the card's own Move form with that status.
+(function () {
+  var dragged = null;
+  document.querySelectorAll('.bcard').forEach(function (card) {
+    card.addEventListener('dragstart', function (event) {
+      dragged = card;
+      card.classList.add('dragging');
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', '');
+    });
+    card.addEventListener('dragend', function () {
+      card.classList.remove('dragging');
+      dragged = null;
+    });
+  });
+  document.querySelectorAll('.column').forEach(function (column) {
+    column.addEventListener('dragover', function (event) {
+      if (!dragged) return;
+      event.preventDefault();
+      column.classList.add('over');
+    });
+    column.addEventListener('dragleave', function (event) {
+      if (!column.contains(event.relatedTarget)) column.classList.remove('over');
+    });
+    column.addEventListener('drop', function (event) {
+      event.preventDefault();
+      column.classList.remove('over');
+      if (!dragged || dragged.closest('.column') === column) return;
+      var form = dragged.querySelector('form.move');
+      form.elements.status.value = column.dataset.status;
+      form.submit();
+    });
+  });
+})();
+</script>
+{% endblock %}

@@ -353,5 +353,6 @@ def sync_all(
     if result.new:
         db.set_meta(session, "batch", str(batch))
     db.set_meta(session, "last_sync", ctx.at.strftime("%b %d, %H:%M"))
+    db.set_meta(session, "last_sync_at", ctx.at.isoformat(timespec="seconds"))
     session.commit()
     return result
