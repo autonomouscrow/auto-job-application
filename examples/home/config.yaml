@@ -1,0 +1,23 @@
+# Example configuration for the made-up applicant.
+
+targets:
+  roles: [swe, quant]            # shown first; other roles are flagged as adjacent
+  term:
+    earliest_start: "2027-05-15"
+    latest_end: "2027-08-31"
+  regions: [north-america, europe]
+  working_language: english
+  work_mode_preference: [onsite, hybrid, remote]   # most to least preferred
+
+sources:
+  - repo: example-org/example-internships
+    branch: main
+
+llm:
+  reading_model: claude-haiku-5-5
+  writing_model: claude-opus-5-5
+
+guard:
+  # Extra strings the commit guard should refuse, beyond name, email, and phone.
+  extra_terms:
+    - alexdoe-example

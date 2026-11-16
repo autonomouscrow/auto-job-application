@@ -1,0 +1,30 @@
+- id: exp-acme-2026
+  org: Acme Robotics
+  role: Software Engineering Intern
+  kind: internship
+  location: Springfield, ON
+  start: 2026-05
+  end: 2026-08
+  facts:
+    - id: exp-acme-2026.uploads
+      text: >-
+        Built a Python service that batches sensor uploads to S3, cutting
+        upload failures from 9% to 1%.
+      skills: [python, aws-s3]
+    - id: exp-acme-2026.tests
+      text: Wrote 120 pytest cases covering the upload path, run on every merge.
+      skills: [python, pytest]
+
+- id: exp-globex-2025
+  org: Globex Analytics
+  role: Data Engineering Intern
+  kind: internship
+  location: Remote
+  start: 2025-05
+  end: 2025-08
+  facts:
+    - id: exp-globex-2025.pipeline
+      text: >-
+        Rewrote a nightly SQL reporting job as an incremental pipeline,
+        reducing its run time from 50 minutes to 6 minutes.
+      skills: [sql, python]

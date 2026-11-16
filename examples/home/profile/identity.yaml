@@ -1,0 +1,16 @@
+name: Alex Doe
+email: alex.doe@example.com
+phone: "+1-555-010-0199"
+location: Springfield, ON
+links:
+  - label: GitHub
+    url: https://github.com/alexdoe-example
+citizenships: [CA]
+work_authorization:
+  - country: CA
+    authorized: true
+    requires_sponsorship: false
+  - country: US
+    authorized: false
+    requires_sponsorship: false
+    note: Eligible for a J-1 intern visa through a sponsor organization.

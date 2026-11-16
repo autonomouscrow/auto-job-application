@@ -1,0 +1,9 @@
+- id: ans-relocate
+  question: Are you willing to relocate for this internship?
+  answer: "Yes."
+- id: ans-proud-project
+  question: Tell us about a project you are proud of.
+  answer: >-
+    I built a limit order book simulator with a C++ matching engine and a
+    Python tool that replays recorded market data through it.
+  facts: [proj-orderbook.engine, proj-orderbook.replay]

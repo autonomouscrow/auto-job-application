@@ -1,0 +1,25 @@
+- id: python
+  name: Python
+  category: Languages
+  aliases: [py]
+- id: cpp
+  name: C++
+  category: Languages
+  aliases: [c plus plus]
+- id: sql
+  name: SQL
+  category: Languages
+- id: pytest
+  name: pytest
+  category: Tools
+- id: aws-s3
+  name: Amazon S3
+  category: Tools
+  aliases: [s3]
+- id: algorithms
+  name: Algorithms
+  category: Fundamentals
+- id: statistics
+  name: Probability and statistics
+  category: Fundamentals
+  evidence: [edu-example-u.courses]

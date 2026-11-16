@@ -1,0 +1,7 @@
+- id: story-flaky-uploads
+  title: Tracking down flaky uploads
+  text: >-
+    At Acme Robotics, sensor uploads failed often enough that the team had
+    stopped trusting the data. I rebuilt the upload path as a batching
+    service and backed it with tests that run on every merge.
+  facts: [exp-acme-2026.uploads, exp-acme-2026.tests]

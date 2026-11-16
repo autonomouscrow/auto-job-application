@@ -1,0 +1,28 @@
+# Personal data must never be committed. It belongs in JOBTOOL_HOME, which
+# lives outside this repository. These rules are a second layer only.
+private/
+.env
+.env.*
+!.env.example
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+*.pdf
+backups/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,4 @@
+#!/bin/sh
+# Refuses commits that contain your personal information.
+# Enable once per clone with:  git config core.hooksPath .githooks
+exec uv run --quiet jobs guard --staged

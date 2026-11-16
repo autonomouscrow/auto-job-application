@@ -1,0 +1,15 @@
+- id: proj-orderbook
+  name: Limit Order Book Simulator
+  summary: A matching engine and replay tool for market data.
+  start: 2026-01
+  end: 2026-04
+  skills: [cpp]
+  facts:
+    - id: proj-orderbook.engine
+      text: >-
+        Implemented a price-time priority matching engine in C++ that
+        processes 1.2 million orders per second on a laptop.
+      skills: [cpp, algorithms]
+    - id: proj-orderbook.replay
+      text: Wrote a Python tool that replays recorded market data through the engine.
+      skills: [python]

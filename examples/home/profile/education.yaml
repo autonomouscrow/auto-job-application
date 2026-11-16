@@ -1,0 +1,15 @@
+- id: edu-example-u
+  school: Example University
+  degree: Bachelor of Science, Computer Science
+  location: Springfield, ON
+  start: 2024-09
+  end: 2028-04
+  year_of_study: 3
+  facts:
+    - id: edu-example-u.gpa
+      text: Cumulative average of 88%.
+    - id: edu-example-u.courses
+      text: >-
+        Coursework in data structures and algorithms, operating systems,
+        probability and statistics, and linear algebra.
+      skills: [algorithms, statistics]
