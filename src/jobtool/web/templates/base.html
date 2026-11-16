@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Job queue{% endblock %}</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="top">
+  <span class="brand">jobtool</span>
+  <nav>
+    {% set here = request.url.path %}
+    <a href="/" class="{{ 'on' if here == '/' }}">Queue <span class="count">{{ counts.main + counts.in_progress }}</span></a>
+    <a href="/list/set-aside" class="{{ 'on' if here.startswith('/list/set-aside') or here.startswith('/set-aside') }}">Set aside <span class="count">{{ counts.set_aside }}</span></a>
+    <a href="/tracker" class="{{ 'on' if here.startswith('/tracker') }}">Tracker <span class="count">{{ counts.applied }}</span></a>
+    <a href="/list/rejected" class="{{ 'on' if here.startswith('/list/rejected') }}">Rejected <span class="count">{{ counts.rejected }}</span></a>
+    <a href="/list/filtered" class="{{ 'on' if here.startswith('/list/filtered') }}">Filtered out <span class="count">{{ counts.filtered }}</span></a>
+    <a href="/sources" class="{{ 'on' if here.startswith('/sources') }}">Sources</a>
+  </nav>
+  <span class="note">Applied today: {{ counts.applied_today }}</span>
+  <form method="post" action="/sync"><button class="small" title="Last sync: {{ last_sync or 'never' }}">Sync now</button></form>
+</header>
+<main class="{% block mainclass %}{% endblock %}">
+{% if message %}<div class="flash">{{ message }}</div>{% endif %}
+{% block content %}{% endblock %}
+</main>
+{% block scripts %}{% endblock %}
+</body>
+</html>

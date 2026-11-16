@@ -125,5 +125,94 @@ def guard_command(
     typer.secho(f"guard: no personal information in {scope}.", fg=typer.colors.GREEN)
 
 
+def _profile_or_none(home: Path):
+    try:
+        return load_profile(profile_dir(home)).profile
+    except ProfileError:
+        typer.secho(
+            "warning: your profile has problems, so skills are ignored in scoring. "
+            "Run 'jobs profile check'.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+        return None
+
+
+@app.command()
+def sync(home: HomeOption = None) -> None:
+    """Fetch every source and update the queue."""
+    from sqlmodel import Session
+
+    from jobtool import db
+    from jobtool.config import load_config
+    from jobtool.sync import sync_all
+
+    home_dir = _home_or_exit(home)
+    with Session(db.open_engine(home_dir)) as session:
+        result = sync_all(session, load_config(home_dir), _profile_or_none(home_dir))
+    if not result.sources:
+        typer.echo("No sources are configured. Add one on the Sources page or in config.yaml.")
+    for source in result.sources:
+        if source.error:
+            typer.secho(f"  {source.slug}: FAILED. {source.error}", fg=typer.colors.RED)
+        elif source.unchanged:
+            typer.echo(f"  {source.slug}: no change since last sync")
+        else:
+            typer.echo(
+                f"  {source.slug}: {source.rows} rows, {source.new} new, {source.closed} closed"
+            )
+    typer.secho(f"{result.new} new listing(s).", fg=typer.colors.GREEN)
+
+
+@app.command()
+def serve(
+    home: HomeOption = None,
+    port: Annotated[int, typer.Option(help="Port to listen on.")] = 8765,
+    open_browser: Annotated[bool, typer.Option("--open/--no-open")] = True,
+) -> None:
+    """Start the local web app. It only listens on this computer."""
+    import threading
+    import webbrowser
+
+    import uvicorn
+
+    from jobtool import maintenance
+    from jobtool.web.app import create_app
+
+    home_dir = _home_or_exit(home)
+    if saved := maintenance.backup(home_dir):
+        typer.echo(f"Backed up the database to {saved.name}")
+    url = f"http://127.0.0.1:{port}"
+    typer.secho(f"Job queue running at {url}  (Ctrl+C to stop)", fg=typer.colors.GREEN)
+    if open_browser:
+        threading.Timer(1.0, webbrowser.open, args=[url]).start()
+    uvicorn.run(create_app(home_dir), host="127.0.0.1", port=port, log_level="warning")
+
+
+@app.command()
+def export(
+    output: Annotated[Path, typer.Argument(help="Where to write the CSV file.")],
+    home: HomeOption = None,
+) -> None:
+    """Write every application to a CSV file."""
+    from sqlmodel import Session
+
+    from jobtool import db, maintenance
+
+    home_dir = _home_or_exit(home)
+    with Session(db.open_engine(home_dir)) as session:
+        output.write_text(maintenance.export_csv(session), encoding="utf-8", newline="")
+    typer.echo(f"Wrote {output}")
+
+
+@app.command()
+def backup(home: HomeOption = None) -> None:
+    """Copy the database into data/backups (at most once a day)."""
+    from jobtool import maintenance
+
+    saved = maintenance.backup(_home_or_exit(home))
+    typer.echo(f"Backed up to {saved}" if saved else "Nothing to do: already backed up today.")
+
+
 if __name__ == "__main__":
     app()

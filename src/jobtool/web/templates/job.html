@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}{{ job.company }}: {{ job.title }}{% endblock %}
+{% block content %}
+<div class="card">
+  {% include "_card.html" %}
+  <div class="actions">
+    {% if job.state in ('main', 'set_aside', 'filtered', 'rejected') %}
+    <form method="post" action="/job/{{ job.id }}/apply" data-open="{{ job.url }}"><button class="primary">Apply</button></form>
+    {% endif %}
+    {% if job.state == 'in_progress' %}<form method="post" action="/job/{{ job.id }}/applied"><button class="primary">I submitted it</button></form>{% endif %}
+    {% if job.state in ('main', 'in_progress', 'filtered') %}<form method="post" action="/job/{{ job.id }}/set-aside"><button>Set aside</button></form>{% endif %}
+    {% if job.state in ('set_aside', 'rejected', 'filtered', 'in_progress') %}<form method="post" action="/job/{{ job.id }}/restore"><button>Back to queue</button></form>{% endif %}
+    {% if job.state in ('main', 'set_aside', 'in_progress', 'filtered') %}<form method="post" action="/job/{{ job.id }}/reject"><button class="danger">Reject</button></form>{% endif %}
+  </div>
+</div>
+{% if application %}
+<div class="card" style="margin-top:16px">
+  <h2>Application</h2>
+  <p class="note">Applied {{ application.applied_at.strftime('%b %d, %Y') }}</p>
+  <form method="post" action="/application/{{ application.id }}">
+    <div class="toolbar">
+      <label>Status
+        <select name="status">{% for status in statuses %}<option {{ 'selected' if status == application.status }}>{{ status }}</option>{% endfor %}</select>
+      </label>
+      <label>Follow up on <input type="date" name="next_followup" value="{{ application.next_followup or '' }}"></label>
+    </div>
+    <textarea name="notes" placeholder="Notes: contacts, what you sent, what they said">{{ application.notes }}</textarea>
+    <div class="actions"><button class="primary">Save</button></div>
+  </form>
+</div>
+{% endif %}
+<div class="card" style="margin-top:16px">
+  <h2>Timeline</h2>
+  <ul class="timeline">
+    <li>{{ job.first_seen.strftime('%b %d, %Y') }}: first seen</li>
+    {% for event in timeline %}
+    <li>{{ event.at.strftime('%b %d, %Y %H:%M') }}: {{ (event.from_value or '')|replace('_', ' ') }} → {{ event.to_value|replace('_', ' ') }}{% if event.note %} ({{ event.note }}){% endif %}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.querySelectorAll('form[data-open]').forEach(function (form) {
+  form.addEventListener('submit', function () { window.open(form.dataset.open, '_blank', 'noopener'); });
+});
+</script>
+{% endblock %}

@@ -5,9 +5,9 @@ job-list repos on GitHub, shows you one posting at a time with a match score,
 prepares a resume and cover letter that can only contain facts from your own
 profile, and keeps track of everything you have applied to.
 
-> **Status: early development.** Phase 0 is in place: the profile schema, its
-> validator, and the commit guard. The features below are being built in the
-> order shown in the roadmap.
+> **Status: early development.** Working today: reading sources, filtering,
+> the one-job-at-a-time queue, and the tracker. Reading job descriptions,
+> the full match score, and document tailoring are next (see the roadmap).
 
 ## What it does
 
@@ -74,7 +74,7 @@ job gets a small touch-up or a full retailor only when no archetype fits.
 |---|---|
 | Language | Python 3.12, managed with `uv` |
 | Storage | SQLite (SQLModel) |
-| Interface | local web app: FastAPI, Jinja, HTMX; plus a Typer CLI |
+| Interface | local web app: FastAPI and Jinja; plus a Typer CLI |
 | Browser automation | Playwright |
 | LLM | Claude API with structured outputs |
 | Profile | YAML validated with Pydantic |
@@ -109,7 +109,7 @@ written. Nothing else leaves your machine.
 
 - [x] **Phase 0:** project skeleton, profile schema and validation, example
       profile, commit safeguards
-- [ ] **Phase 1:** sources page and parsers, closed-job filtering, the
+- [x] **Phase 1:** sources page and parsers, closed-job filtering, the
       one-job-at-a-time queue, tracker table, CSV export
 - [ ] **Phase 2:** posting fetch, requirements extraction, filters, full
       match score
@@ -142,13 +142,39 @@ repository; set `JOBTOOL_HOME` to use a different location.
 
 ```
 uv run jobs profile check        # validate your profile
-uv run jobs guard                # audit the repository for your personal info
+uv run jobs sync                 # read your sources and fill the queue
+uv run jobs serve                # open the queue in your browser
 ```
 
-### Commands so far
+### Using the queue
+
+The app shows one job at a time, newest finds first, then by match score.
+
+| Button | Key | What happens |
+|---|---|---|
+| Apply | `A` | opens the posting in a new tab and keeps the job on screen as "in progress" |
+| I submitted it | `A` | records the application and shows the next job |
+| Set aside | `S` | moves the job to a separate queue, with an optional note |
+| Reject | `R` | the job is never shown again |
+| Undo | `U` | reverses the last button press |
+| | `O` | opens the posting without starting an application |
+
+Other pages: **Tracker** (applications, status, follow-up dates, CSV export),
+**Set aside**, **Rejected**, **Filtered out** (jobs removed automatically,
+each with its reason and a button to bring it back), and **Sources** (add a
+repository, preview what was parsed, turn sources on and off).
+
+Until job descriptions are read (Phase 2) the match score is provisional: it
+uses the title, term, and location only, and says so on the card.
+
+### Commands
 
 | Command | What it does |
 |---|---|
+| `jobs serve` | starts the local web app (it listens on this computer only) |
+| `jobs sync` | fetches every source and updates the queue |
+| `jobs export FILE` | writes every application to a CSV file |
+| `jobs backup` | copies the database to `data/backups` (also done daily by `serve`) |
 | `jobs profile check` | validates the profile and lists every problem and warning |
 | `jobs profile facts` | lists every fact with its ID |
 | `jobs guard` | scans tracked files for your name, email, phone, and extra terms |

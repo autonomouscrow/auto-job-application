@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block mainclass %}wide{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <div><h2>{{ title }}</h2><div class="note">{{ blurb }}</div></div>
+  <span class="spacer"></span>
+  {% if name == 'set-aside' and jobs %}<a class="button" href="/set-aside/work">Work through these one at a time</a>{% endif %}
+</div>
+{% if not jobs %}<div class="card empty">Nothing here.</div>{% else %}
+{% if total > jobs|length %}<p class="note">Showing the first {{ jobs|length }} of {{ total }}.</p>{% endif %}
+<div class="tablewrap"><table class="rows">
+  <tr><th>Company</th><th>Role</th><th>Type</th><th>Location</th><th>Score</th>
+      <th>{{ 'Reason' if name == 'filtered' else 'Note' }}</th><th></th></tr>
+  {% for job in jobs %}
+  <tr>
+    <td>{{ job.company }}</td>
+    <td><a href="/job/{{ job.id }}">{{ job.title }}</a>{% if not job.open %} <span class="chip closed">closed</span>{% endif %}</td>
+    <td>{{ job.role_type }}</td>
+    <td>{{ job.locations[:2]|join('; ') }}</td>
+    <td class="n">{{ job.score }}</td>
+    <td class="note">{{ job.state_reason if name == 'filtered' else job.note }}</td>
+    <td><form method="post" action="/job/{{ job.id }}/restore"><button class="small">Back to queue</button></form></td>
+  </tr>
+  {% endfor %}
+</table></div>
+{% endif %}
+{% endblock %}

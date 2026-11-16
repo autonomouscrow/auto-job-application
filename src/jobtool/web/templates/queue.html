@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Set aside' if mode == 'set-aside' else 'Queue' }}{% endblock %}
+{% block content %}
+{% if mode == 'set-aside' %}<div class="toolbar"><h2>Working through set-aside jobs</h2><span class="spacer"></span><a href="/list/set-aside">See the whole list</a></div>{% endif %}
+{% if not job %}
+  <div class="card empty">
+    {% if mode == 'set-aside' %}Nothing is set aside.{% else %}
+    <p>Nothing left in the queue.</p>
+    <p class="note">Press “Sync now” to check your sources, or add one on the <a href="/sources">Sources</a> page.</p>{% endif %}
+  </div>
+{% else %}
+<div class="card">
+  {% include "_card.html" %}
+  {% if job.state == 'in_progress' %}
+  <div class="warnbox">Application in progress. Submit it on the employer's site, then mark it here.</div>
+  <div class="actions">
+    <a class="button" href="{{ job.url }}" target="_blank" rel="noopener">Open application</a>
+    <form method="post" action="/job/{{ job.id }}/applied"><button class="primary" id="k-a">I submitted it<kbd>A</kbd></button></form>
+    <form method="post" action="/job/{{ job.id }}/restore"><button id="k-b">Not now, back to queue<kbd>B</kbd></button></form>
+    <form method="post" action="/job/{{ job.id }}/set-aside"><button id="k-s">Set aside<kbd>S</kbd></button></form>
+  </div>
+  {% else %}
+  <div class="actions">
+    <form method="post" action="/job/{{ job.id }}/apply" data-open="{{ job.url }}"><button class="primary" id="k-a">Apply<kbd>A</kbd></button></form>
+    <form method="post" action="/job/{{ job.id }}/set-aside">
+      <input type="text" name="note" placeholder="Note (optional)" size="18">
+      <button id="k-s">Set aside<kbd>S</kbd></button>
+    </form>
+    {% if mode == 'set-aside' %}<form method="post" action="/job/{{ job.id }}/restore"><button id="k-b">Back to main queue<kbd>B</kbd></button></form>{% endif %}
+    <form method="post" action="/job/{{ job.id }}/reject"><button class="danger" id="k-r">Reject<kbd>R</kbd></button></form>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+<div class="toolbar">
+  <form method="post" action="/undo"><button class="small" id="k-u">Undo last action<kbd>U</kbd></button></form>
+  <span class="spacer"></span>
+  <span class="note">{{ counts.main }} in the queue, {{ counts.set_aside }} set aside. <kbd>O</kbd> opens the posting.</span>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+// Apply opens the posting in a new tab while the page moves the job to "in progress".
+document.querySelectorAll('form[data-open]').forEach(function (form) {
+  form.addEventListener('submit', function () { window.open(form.dataset.open, '_blank', 'noopener'); });
+});
+document.addEventListener('keydown', function (event) {
+  if (event.ctrlKey || event.metaKey || event.altKey) return;
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName)) return;
+  var key = event.key.toLowerCase();
+  if (key === 'o') { var link = document.getElementById('posting'); if (link) window.open(link.href, '_blank', 'noopener'); return; }
+  var button = document.getElementById('k-' + key);
+  if (button) { event.preventDefault(); button.click(); }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Sources{% endblock %}
+{% block mainclass %}wide{% endblock %}
+{% block content %}
+<div class="toolbar"><div><h2>Sources</h2><div class="note">GitHub repositories that list jobs. Last sync: {{ last_sync or 'never' }}.</div></div></div>
+<div class="tablewrap"><table class="rows">
+  <tr><th>Repository</th><th>Format</th><th>Reads</th><th>Rows</th><th>Last synced</th><th>Status</th><th></th></tr>
+  {% for source in sources %}
+  <tr>
+    <td><a href="https://github.com/{{ source.repo }}" target="_blank" rel="noopener">{{ source.repo }}</a></td>
+    <td>{{ source.parser }}</td>
+    <td class="note">{{ source.branch }}/{{ source.path }}</td>
+    <td class="n">{{ source.last_row_count }}</td>
+    <td>{{ source.last_synced.strftime('%b %d %H:%M') if source.last_synced else 'never' }}</td>
+    <td>{% if source.last_error %}<span class="error">{{ source.last_error }}</span>{% elif source.enabled %}OK{% else %}Off{% endif %}</td>
+    <td><form method="post" action="/sources/{{ source.id }}/toggle"><button class="small">{{ 'Turn off' if source.enabled else 'Turn on' }}</button></form></td>
+  </tr>
+  {% else %}
+  <tr><td colspan="7" class="note">No sources yet. Add one below.</td></tr>
+  {% endfor %}
+</table></div>
+
+<div class="card" style="margin-top:18px">
+  <h2>Add a source</h2>
+  <p class="note">Paste a GitHub repository. The format is detected, and you see the first rows before anything is saved.</p>
+  <form method="post" action="/sources/preview" class="toolbar">
+    <input type="text" name="repo" size="48" placeholder="https://github.com/owner/repository" required>
+    <button class="primary">Check it</button>
+  </form>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  {% if preview %}
+  <p>Found <strong>{{ preview.total }}</strong> listings as <strong>{{ preview.source.parser }}</strong> in
+     <code>{{ preview.source.branch }}/{{ preview.source.path }}</code>. First rows:</p>
+  <div class="tablewrap"><table class="rows">
+    <tr><th>Company</th><th>Title</th><th>Location</th><th>Posted</th><th>Open</th></tr>
+    {% for row in preview.rows %}
+    <tr><td>{{ row.company }}</td><td><a href="{{ row.url }}" target="_blank" rel="noopener">{{ row.title }}</a></td>
+        <td>{{ row.locations|join('; ') }}</td><td>{{ row.date_posted or '' }}</td><td>{{ 'yes' if row.active else 'no' }}</td></tr>
+    {% endfor %}
+  </table></div>
+  <form method="post" action="/sources/add" class="toolbar">
+    <input type="hidden" name="repo" value="{{ preview.source.repo }}">
+    <input type="hidden" name="branch" value="{{ preview.source.branch }}">
+    <input type="hidden" name="path" value="{{ preview.source.path }}">
+    <input type="hidden" name="parser" value="{{ preview.source.parser }}">
+    <label>Treat unclear roles as
+      <select name="default_role"><option value="">not a target</option><option value="swe">SWE</option><option value="quant">quant</option><option value="adjacent">adjacent</option></select>
+    </label>
+    <button class="primary">Looks right, add it</button>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}

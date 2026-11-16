@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Tracker{% endblock %}
+{% block mainclass %}wide{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <h2>Applications</h2>
+  <span class="spacer"></span>
+  <form method="get" action="/tracker">
+    <select name="status" onchange="this.form.submit()">
+      <option value="">All statuses</option>
+      {% for item in statuses %}<option {{ 'selected' if item == status }}>{{ item }}</option>{% endfor %}
+    </select>
+  </form>
+  <a class="button" href="/export.csv">Export CSV</a>
+</div>
+{% if not rows %}<div class="card empty">No applications{{ ' with that status' if status }} yet.</div>{% else %}
+<div class="tablewrap"><table class="rows">
+  <tr><th>Applied</th><th>Company</th><th>Role</th><th>Type</th><th>Score</th><th>Follow up</th><th>Status</th></tr>
+  {% for application, job in rows %}
+  <tr>
+    <td>{{ application.applied_at.strftime('%b %d') }}</td>
+    <td>{{ job.company }}</td>
+    <td><a href="/job/{{ job.id }}">{{ job.title }}</a></td>
+    <td>{{ job.role_type }}</td>
+    <td class="n">{{ job.score }}</td>
+    <td>{{ application.next_followup or '' }}</td>
+    <td>
+      <form method="post" action="/application/{{ application.id }}">
+        <select name="status" onchange="this.form.submit()">
+          {% for item in statuses %}<option {{ 'selected' if item == application.status }}>{{ item }}</option>{% endfor %}
+        </select>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+</table></div>
+{% endif %}
+{% endblock %}

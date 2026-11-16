@@ -9,9 +9,20 @@ targets:
   working_language: english
   work_mode_preference: [onsite, hybrid, remote]   # most to least preferred
 
+applicant:
+  degree: bachelor               # bachelor, master, or phd; other levels are filtered out
+
+ingest:
+  max_age_days: 60               # for sources that never mark roles closed
+  missing_syncs_to_close: 2
+
+# Used until you add or change a source on the Sources page. From then on the
+# app keeps the list in sources.yaml next to this file.
 sources:
   - repo: example-org/example-internships
     branch: main
+    path: README.md
+    parser: markdown-table       # json, yaml-folder, or markdown-table
 
 llm:
   reading_model: claude-haiku-5-5

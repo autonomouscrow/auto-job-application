@@ -1,0 +1,36 @@
+<h1>{{ job.title }}</h1>
+<div class="company">
+  {% if job.company_url %}<a href="{{ job.company_url }}" target="_blank" rel="noopener">{{ job.company }}</a>{% else %}{{ job.company }}{% endif %}
+</div>
+<div class="meta">
+  <span class="chip role-{{ job.role_type }}">{{ {'quant': 'Quant', 'swe': 'SWE', 'adjacent': 'Adjacent, your call', 'off-target': 'Off target'}[job.role_type] }}</span>
+  {% for location in job.locations[:4] %}<span class="chip">{{ location }}</span>{% endfor %}
+  {% if job.locations|length > 4 %}<span class="chip">+{{ job.locations|length - 4 }} more</span>{% endif %}
+  {% for term in job.terms %}<span class="chip">{{ term }}</span>{% endfor %}
+  {% if job.date_posted %}<span class="chip">Posted {{ job.date_posted.strftime('%b %d, %Y') }}</span>{% endif %}
+  {% for flag in job.flags %}<span class="chip flag">{{ flag }}</span>{% endfor %}
+  {% if not job.open %}<span class="chip closed">Closed at the source</span>{% endif %}
+</div>
+{% if repeat and repeat.state != 'main' %}
+<div class="warnbox">Possible repeat of <a href="/job/{{ repeat.id }}">{{ repeat.title }}</a>, which is
+  {{ {'main': 'in your queue', 'in_progress': 'in progress', 'set_aside': 'set aside', 'rejected': 'one you rejected', 'applied': 'one you applied to', 'filtered': 'filtered out'}[repeat.state] }}.</div>
+{% endif %}
+{% if job.state == 'filtered' and job.state_reason %}<div class="warnbox">Filtered out. {{ job.state_reason }}</div>{% endif %}
+{% set detail = job.score_detail %}
+<div class="scorebox">
+  <div class="score">{{ job.score }}<small>{{ 'provisional match' if detail.provisional else 'match' }}</small></div>
+  <div class="breakdown">
+    <table>
+      {% for name, points in (detail.components or {}).items() %}
+      <tr><td>{{ name }}</td><td class="n">{{ points }}</td></tr>
+      {% endfor %}
+    </table>
+    {% if detail.matched_skills %}<div>Your skills named in the title: {{ detail.matched_skills|join(', ') }}</div>{% endif %}
+    {% if detail.provisional %}<div>From the title, term, and location only. The job description is not read yet.</div>{% endif %}
+  </div>
+</div>
+<div class="note">
+  Listed by {{ job_sources|join(', ') or 'unknown source' }}.
+  <a href="{{ job.url }}" target="_blank" rel="noopener" id="posting">Open the posting</a>
+</div>
+{% if job.note %}<div class="note">Your note: {{ job.note }}</div>{% endif %}
