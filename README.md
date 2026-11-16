@@ -7,9 +7,10 @@ profile, and keeps track of everything you have applied to.
 
 > **Status: early development.** Working today: reading sources, filtering,
 > the one-job-at-a-time queue, the tracker, reading job postings, the full
-> match score, filters based on the job description, and alerts when the
-> Claude API key needs attention. Document tailoring is next (see the
-> roadmap).
+> match score, filters based on the job description, alerts when the
+> Claude API key needs attention, and resumes and cover letters built from
+> your profile with a fact check and switchable styles. The application
+> assist panel is next (see the roadmap).
 
 ## What it does
 
@@ -138,6 +139,73 @@ under `llm` in `config.yaml` says how many (10 by default). As you go
 through the queue, the jobs behind are read in turn. A posting is fetched
 again after `refresh_days` days (4 by default) to notice when it closes.
 
+## Resumes and cover letters
+
+Documents are written by Claude from your profile, checked by plain code,
+and laid out with LaTeX.
+
+**Archetypes.** On the **Resumes** page you create a resume for each kind of
+role you apply to, for example "Quant" and "Backend". You give it a name, a
+role type, and a sentence on what it should lean toward. Claude writes it
+once, you read it next to the facts each line came from, and you approve
+it. For each job the app then suggests the cheapest thing that fits:
+
+| Choice | What happens | Uses Claude |
+|---|---|---|
+| Reuse | the approved archetype as it is | no |
+| Touch-up | the archetype, with the skills this job asks for moved to the front of the skills section and any you have but it lacks added | no |
+| Tailor | a new resume written from your profile for this posting | yes |
+
+You can always pick a different one. Cover letters are written per job.
+
+**The fact check.** The model returns wording plus the ids of the profile
+facts behind it. Names, dates, employers, titles, and contact details are
+never taken from the model; they are copied from your profile. Every
+sentence is then rejected if it
+
+- cites no fact, a fact that does not exist, or a fact from another entry;
+- contains a number, in digits or words, that the cited facts do not have;
+- names a tool, skill, company, or anything else with a capital letter,
+  digit, or symbol that the cited facts do not mention;
+- mentions a known technology, a skill from your profile, or a skill the
+  posting asks for that the cited facts do not back;
+- shares too little wording with the cited facts to be a restatement.
+
+A rejected sentence is sent back once with the reasons. If it fails again
+it is replaced by your own wording of the fact (in a resume) or left out
+(in a letter). The page shows what was rejected and why. The check leans
+toward rejecting, and it cannot judge tone or emphasis, so read documents
+before you approve them.
+
+**Styles.** A document is stored as structured content, so its look can be
+changed at any time without asking the model again. Two styles are built in:
+`navy` and `classic`. Pick one per archetype or per document on its page, or
+set the default in `config.yaml`:
+
+```yaml
+resume:
+  style: navy
+  options:            # each style has its own defaults
+    accent: "1F3A5F"  # six-digit colour
+    font_size: 10     # 10, 11, or 12
+    margin: 0.5       # side margins in inches
+    bold_highlights: true
+  projects_title: Projects
+```
+
+To add your own style, copy a folder from `src/jobtool/resume/styles/` to
+`resume/styles/<name>/` in your home folder and edit the `.tex.j2` files. A
+style in your home folder with the same name as a built-in one replaces it.
+
+**PDFs** need a LaTeX engine on your PATH: [Tectonic](https://tectonic-typesetting.github.io),
+or `pdflatex` from MiKTeX or TeX Live. `jobs doctor` says whether one was
+found. Without one the `.tex` file is still written. If a resume runs past
+one page, its lowest-priority bullets are removed until it fits, and the
+page lists what was cut.
+
+Files are kept in your home folder under `data/archetypes/` and
+`data/documents/<job id>/`.
+
 ## Setting up the Claude API key
 
 Reading postings needs a Claude API key.
@@ -187,9 +255,12 @@ company, and text, plus these parts of your profile: your skills list, your
 degree and year of study, the titles and dates of your roles, the names and
 summaries of your projects, and the text of the facts under each of them. It
 never receives your name, email, phone, address, links, or the names of your
-school and employers. When documents are written (Phase 3), the parts of
-your profile needed for that document are sent too. Nothing else leaves your
-machine.
+school and employers. When a resume or cover letter is written, the model
+needs more: it receives every education, experience, and project entry with
+its heading (so school and employer names are included), every fact, and
+your skills list, plus the job's details when tailoring. It still never
+receives your name, email, phone, address, or links; those are added to the
+document on your machine. Nothing else leaves your machine.
 
 ## Roadmap
 
@@ -199,7 +270,7 @@ machine.
       one-job-at-a-time queue, tracker table, CSV export
 - [x] **Phase 2:** posting fetch, requirements extraction, filters, full
       match score
-- [ ] **Phase 3:** archetype resumes, tailoring, the verifier, cover letters
+- [x] **Phase 3:** archetype resumes, tailoring, the verifier, cover letters
 - [ ] **Phase 4:** application assist panel and reusable answer bank
 - [ ] **Phase 5:** board view, stats, scheduled sync, reminders
 

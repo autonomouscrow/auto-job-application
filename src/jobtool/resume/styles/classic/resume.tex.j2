@@ -1,0 +1,49 @@
+%# Classic: airier one-page resume. Every piece of document text goes through |tex or |rich.
+\BLOCK{include "preamble.tex.j2"}
+
+\begin{document}
+
+\BLOCK{include "header.tex.j2"}
+\vspace{-6pt}
+
+\BLOCK{for section in doc.sections}
+\BLOCK{if section.blocks}
+\section{\VAR{section.title|tex}}
+\BLOCK{for block in section.blocks}
+\BLOCK{if section.key == "projects"}
+\BLOCK{if block.stack}
+\project{\VAR{block.title|tex}}{\VAR{block.stack|map("tex")|join(", ")}}{\VAR{block.dates|tex}}
+\BLOCK{else}
+\projectshort{\VAR{block.title|tex}}{\VAR{block.dates|tex}}
+\BLOCK{endif}
+\BLOCK{elif block.subtitle or block.location}
+\entry{\VAR{block.title|tex}}{\VAR{block.dates|tex}}{\VAR{block.subtitle|tex}}{\VAR{block.location|tex}}
+\BLOCK{else}
+\entryshort{\VAR{block.title|tex}}{\VAR{block.dates|tex}}
+\BLOCK{endif}
+\BLOCK{if block.lines}
+\begin{itemize}
+\BLOCK{for line in block.lines}
+  \item \VAR{line.text|rich}
+\BLOCK{endfor}
+\end{itemize}
+\BLOCK{else}
+\par
+\BLOCK{endif}
+\BLOCK{if not loop.last}
+\vspace{4pt}
+\BLOCK{endif}
+
+\BLOCK{endfor}
+\BLOCK{endif}
+\BLOCK{endfor}
+\BLOCK{if doc.skills}
+\section{\VAR{doc.skills_title|tex}}
+\begin{tabularx}{\linewidth}{@{}l@{\hspace{1.2em}}X@{}}
+\BLOCK{for row in doc.skills}
+  \textbf{\VAR{row.label|tex}} & \VAR{row.items|map("tex")|join(", ")} \\
+\BLOCK{endfor}
+\end{tabularx}
+\BLOCK{endif}
+
+\end{document}

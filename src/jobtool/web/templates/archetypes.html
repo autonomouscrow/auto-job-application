@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% from "_documents.html" import style_options %}
+{% block title %}Resumes{% endblock %}
+{% block mainclass %}wide{% endblock %}
+{% block content %}
+<div class="toolbar"><div>
+  <h2>Archetype resumes</h2>
+  <p class="note lead">An archetype is a resume for one kind of role, written once by Claude from your profile, checked line by line against it, and approved by you.
+  Most jobs then reuse an approved archetype as it is, which is free and instant, and only jobs that fit none of them need a resume of their own.</p>
+</div></div>
+{% if engine_found is none %}
+<div class="warnbox">No LaTeX engine was found, so PDFs cannot be made until Tectonic or MiKTeX is installed. The .tex files are still written.</div>
+{% endif %}
+<div class="tablewrap"><table class="rows">
+  <tr><th>Name</th><th>Role type</th><th>Style</th><th>Status</th><th>Pages</th><th>Updated</th></tr>
+  {% for row in archetypes %}
+  <tr>
+    <td><a href="/archetypes/{{ row.id }}">{{ row.name }}</a></td>
+    <td>{{ {'any': 'Any', 'quant': 'Quant', 'swe': 'SWE', 'adjacent': 'Adjacent'}.get(row.role_type, row.role_type) }}</td>
+    <td>{{ row.style or 'default' }}</td>
+    <td>{% if not row.doc_json %}<span class="note">not generated yet</span>{% elif row.approved %}<span class="status-approved">approved</span>{% else %}<span class="status-draft">draft</span>{% endif %}</td>
+    <td class="n">{% if row.doc_json %}<span class="{{ 'error' if row.pages != 1 }}">{{ row.pages }}</span>{% endif %}</td>
+    <td>{{ row.updated_at.strftime('%b %d, %Y') }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="6" class="note">No archetypes yet. Create the first one below.</td></tr>
+  {% endfor %}
+</table></div>
+
+<div class="card" style="margin-top:18px">
+  <h2>Create an archetype</h2>
+  <p class="note">Nothing is written until you press “Write it with Claude” on its page.</p>
+  <form method="post" action="/archetypes" class="stack">
+    <div class="docfields">
+      <label>Name <input type="text" name="name" required placeholder="Backend SWE" size="24"></label>
+      <label>Role type
+        <select name="role_type">
+          <option value="any">Any</option><option value="quant">Quant</option>
+          <option value="swe">SWE</option><option value="adjacent">Adjacent</option>
+        </select>
+      </label>
+      <label>Style <select name="style">{{ style_options(styles, default_style) }}</select></label>
+    </div>
+    <label class="block">What should this resume lean toward?
+      <textarea name="focus" placeholder="For example: backend services and data pipelines; put Python and SQL first and lead with the internship work."></textarea>
+    </label>
+    <div><button class="primary">Create</button></div>
+  </form>
+</div>
+{% endblock %}

@@ -16,6 +16,7 @@
     <a href="/tracker" class="{{ 'on' if here.startswith('/tracker') }}">Tracker <span class="count">{{ counts.applied }}</span></a>
     <a href="/list/rejected" class="{{ 'on' if here.startswith('/list/rejected') }}">Rejected <span class="count">{{ counts.rejected }}</span></a>
     <a href="/list/filtered" class="{{ 'on' if here.startswith('/list/filtered') }}">Filtered out <span class="count">{{ counts.filtered }}</span></a>
+    <a href="/archetypes" class="{{ 'on' if here.startswith('/archetypes') }}">Resumes</a>
     <a href="/sources" class="{{ 'on' if here.startswith('/sources') }}">Sources</a>
   </nav>
   <span class="note">Applied today: {{ counts.applied_today }}</span>
@@ -37,5 +38,11 @@
 {% block content %}{% endblock %}
 </main>
 {% block scripts %}{% endblock %}
+<script>
+// Writing with Claude can take up to a minute: say so once the form is sent.
+document.querySelectorAll('form[data-wait]').forEach(function (form) {
+  form.addEventListener('submit', function () { form.classList.add('waiting'); });
+});
+</script>
 </body>
 </html>

@@ -1,0 +1,7 @@
+label: Navy
+description: Compact sans-serif layout with a navy accent, coloured bullets and muted dates.
+options:
+  accent: 1F3A5F
+  font_size: 10
+  margin: 0.5
+  bold_highlights: true

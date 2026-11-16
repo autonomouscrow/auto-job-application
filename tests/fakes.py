@@ -69,21 +69,149 @@ def extracted(**changes) -> Extracted:
 
 
 class FakeReader:
-    """Answers every call with the same reading, or raises the given problem."""
+    """Answers every call with the same reading, or raises the given problem.
+
+    ``answers`` maps a schema class to the reply for it, or to a list of replies
+    used in turn (the last one repeats), for code that makes several kinds of call.
+    """
 
     model = "fake-reader"
 
-    def __init__(self, answer: Extracted | None = None, problem: LlmProblem | None = None):
+    def __init__(
+        self,
+        answer: Extracted | None = None,
+        problem: LlmProblem | None = None,
+        answers: dict | None = None,
+    ):
         self.answer = answer or extracted()
         self.problem = problem
+        self.answers = answers or {}
         self.calls: list[dict] = []
 
     def check(self) -> None:
         if self.problem:
             raise self.problem
 
-    def parse(self, *, system: str, user: str, schema, max_tokens: int = 4000) -> Reply:
-        self.calls.append({"system": system, "user": user})
+    def parse(
+        self, *, system: str, user: str, schema, max_tokens: int = 4000, thinking: bool = False
+    ) -> Reply:
+        self.calls.append({"system": system, "user": user, "schema": schema})
         if self.problem:
             raise self.problem
-        return Reply(self.answer.model_copy(deep=True), self.model, 1000, 200)
+        answer = self.answers.get(schema, self.answer)
+        if isinstance(answer, list):
+            answer = answer.pop(0) if len(answer) > 1 else answer[0]
+        return Reply(answer.model_copy(deep=True), self.model, 1000, 200)
+
+
+# ----- writing ----------------------------------------------------------------
+
+
+def resume_draft(**changes):
+    """A resume for the example applicant in which every bullet restates its facts."""
+    from jobtool.resume.model import DraftBlock, DraftLine, DraftSkillRow, ResumeDraft
+
+    def line(text: str, *fact_ids: str, priority: int = 2) -> DraftLine:
+        return DraftLine(text=text, fact_ids=list(fact_ids), priority=priority)
+
+    values = {
+        "section_order": ["education", "experience", "projects"],
+        "education": [
+            DraftBlock(
+                entry_id="edu-example-u",
+                lines=[line("**Cumulative average of 88%**", "edu-example-u.gpa", priority=1)],
+            )
+        ],
+        "experience": [
+            DraftBlock(
+                entry_id="exp-globex-2025",
+                lines=[
+                    line(
+                        "Rewrote a nightly SQL reporting job as an incremental pipeline, "
+                        "**cutting its run time from 50 minutes to 6 minutes**",
+                        "exp-globex-2025.pipeline",
+                        priority=1,
+                    )
+                ],
+            ),
+            DraftBlock(
+                entry_id="exp-acme-2026",
+                lines=[
+                    line(
+                        "Built a **Python** service that batches sensor uploads to S3, "
+                        "cutting upload failures from 9% to 1%",
+                        "exp-acme-2026.uploads",
+                        priority=1,
+                    ),
+                    line(
+                        "Wrote 120 pytest cases covering the upload path, run on every merge",
+                        "exp-acme-2026.tests",
+                        priority=3,
+                    ),
+                ],
+            ),
+        ],
+        "projects": [
+            DraftBlock(
+                entry_id="proj-orderbook",
+                lines=[
+                    line(
+                        "Implemented a price-time priority matching engine in **C++** that "
+                        "processes 1.2 million orders per second",
+                        "proj-orderbook.engine",
+                    )
+                ],
+            )
+        ],
+        "skills": [
+            DraftSkillRow(label="Languages", skill_ids=["python", "cpp", "sql"]),
+            DraftSkillRow(label="Tools", skill_ids=["pytest", "aws-s3"]),
+        ],
+    }
+    values.update(changes)
+    return ResumeDraft(**values)
+
+
+def letter_draft(**changes):
+    """A cover letter body for the example applicant that passes the fact check."""
+    from jobtool.resume.model import DraftParagraph, LetterDraft
+
+    values = {
+        "paragraphs": [
+            DraftParagraph(
+                text=(
+                    "I am applying for the Software Engineer Intern role at Initech. At Acme "
+                    "Robotics I built a Python service that batches sensor uploads to S3, "
+                    "which cut upload failures from 9% to 1%."
+                ),
+                fact_ids=["exp-acme-2026.uploads"],
+            ),
+            DraftParagraph(
+                text=(
+                    "At Globex Analytics I rewrote a nightly SQL reporting job as an "
+                    "incremental pipeline, reducing its run time from 50 minutes to 6 minutes."
+                ),
+                fact_ids=["exp-globex-2025.pipeline"],
+            ),
+            DraftParagraph(
+                text="I would be glad to talk about the role whenever it suits you.",
+                fact_ids=[],
+            ),
+        ]
+    }
+    values.update(changes)
+    return LetterDraft(**values)
+
+
+def writer(resume=None, letter=None, fixes=None) -> FakeReader:
+    """A fake writing model: answers by schema, so one object serves every kind of call."""
+    from jobtool.resume.model import LetterDraft, ResumeDraft
+    from jobtool.resume.write import _Fixes
+
+    return FakeReader(
+        answers={
+            ResumeDraft: resume or resume_draft(),
+            LetterDraft: letter or letter_draft(),
+            _Fixes: fixes or _Fixes(fixes=[]),
+        }
+    )

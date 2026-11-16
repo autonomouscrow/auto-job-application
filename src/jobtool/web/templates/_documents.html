@@ -1,0 +1,149 @@
+{#- Resume and cover letter for one job, plus macros shared with the archetype pages. -#}
+
+{#- Model text may hold **bold** spans and nothing else: every piece is escaped. -#}
+{% macro bold(text) -%}
+{%- for piece in (text or '').split('**') -%}
+{%- if loop.index0 is odd %}<strong>{{ piece }}</strong>{% else %}{{ piece }}{% endif -%}
+{%- endfor -%}
+{%- endmacro %}
+
+{% macro style_options(styles, default_style, current='', default_label='') -%}
+<option value="">{{ default_label or 'Default (' ~ default_style ~ ')' }}</option>
+{% for style in styles %}<option value="{{ style.name }}" title="{{ style.description }}" {{ 'selected' if style.name == current }}>{{ style.label }}</option>{% endfor %}
+{%- endmacro %}
+
+{#- "12 sentences checked, 1 rewritten" -#}
+{% macro report_line(report) -%}
+{%- set findings = report.findings or [] -%}
+{{ report.checked or 0 }} sentence{{ '' if (report.checked or 0) == 1 else 's' }} checked
+{%- for action, group in findings|groupby('action') %}, {{ group|length }} {{ action }}{% endfor -%}
+{%- if not findings %}, all passed{% endif -%}
+{%- endmacro %}
+
+{% macro report_body(report) -%}
+{%- set findings = report.findings or [] -%}
+{% if findings %}
+<ul class="findings">
+  {% for finding in findings %}
+  <li>
+    {% if finding.where %}<span class="where">{{ finding.where }}</span>{% endif %}
+    <q class="rejected">{{ bold(finding.text) }}</q>
+    {% if finding.problems %}<ul class="problems">{% for problem in finding.problems %}<li>{{ problem }}</li>{% endfor %}</ul>{% endif %}
+    <div class="done">What was done: {{ finding.action }}.</div>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="passed">Every sentence passed the check against your profile.</p>
+{% endif %}
+{% if report.notes %}
+<ul class="report-notes">{% for item in report.notes %}<li>{{ item }}</li>{% endfor %}</ul>
+{% endif %}
+{%- endmacro %}
+
+{% macro make_form(job, recommendation, archetypes, styles, default_style) -%}
+{%- set wanted = recommendation.archetype.id if recommendation.archetype else None -%}
+{%- set labels = {'reuse': 'Reuse it as is', 'touch-up': 'Reuse it with this job\'s skills first', 'tailor': 'Tailor for this job (uses Claude)'} -%}
+<form method="post" action="/job/{{ job.id }}/resume" class="docform" data-wait>
+  {% if archetypes %}
+  {%- set order = [recommendation.mode] + (['reuse', 'touch-up', 'tailor']|reject('equalto', recommendation.mode)|list) -%}
+  <div class="docfields">
+    <label>Archetype
+      <select name="archetype_id">
+        {% for row in archetypes %}<option value="{{ row.id }}" {{ 'selected' if row.id == wanted }}>{{ row.name }}{{ '' if row.approved else ' (not approved yet)' }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Style <select name="style">{{ style_options(styles, default_style, '', 'The archetype\'s style, or the default') }}</select></label>
+  </div>
+  <div class="docbuttons">
+    {% for mode in order %}
+    <button name="mode" value="{{ mode }}" class="{{ 'primary' if loop.first else 'small' }}">{{ labels[mode] }}</button>
+    {% endfor %}
+  </div>
+  <p class="note">Reusing is free and instant. Tailoring writes a new resume for this job and takes up to a minute.</p>
+  {% else %}
+  <div class="docbuttons">
+    <button name="mode" value="tailor" class="primary">{{ labels['tailor'] }}</button>
+    <a href="/archetypes">Set up an archetype resume to reuse</a>
+  </div>
+  <p class="note">Tailoring writes a new resume for this job and takes up to a minute.</p>
+  {% endif %}
+  <p class="wait">Working on it. This can take up to a minute.</p>
+</form>
+{%- endmacro %}
+
+{% macro made_controls(job, kind, document, report, styles, default_style) -%}
+{%- set noun = 'resume' if kind == 'resume' else 'cover letter' -%}
+{% if document.error and document.pages == 0 %}
+<div class="warnbox">The PDF could not be made. {{ document.error }}</div>
+{% elif document.pages > 1 %}
+<div class="warnbox">This {{ noun }} runs to {{ document.pages }} pages.{% if document.error %} {{ document.error }}{% endif %}</div>
+{% endif %}
+<div class="doclinks">
+  {% if document.pages %}<a href="/job/{{ job.id }}/{{ kind }}.pdf" target="_blank" rel="noopener">Open PDF</a>
+  <span class="note">{{ document.pages }} page{{ '' if document.pages == 1 else 's' }}</span>{% endif %}
+  <a href="/job/{{ job.id }}/{{ kind }}.tex" target="_blank" rel="noopener">.tex</a>
+  {% if document.approved %}<span class="chip have">Approved</span>{% endif %}
+</div>
+{% if not report.checked and not report.findings %}
+<p class="note">No new sentences were written for this job, so there was nothing new to check.
+  {%- if document.archetype_id %} The wording was checked when <a href="/archetypes/{{ document.archetype_id }}">the archetype</a> was written.{% endif %}</p>
+{% if report.notes %}<ul class="report-notes">{% for item in report.notes %}<li>{{ item }}</li>{% endfor %}</ul>{% endif %}
+{% else %}
+<details class="report">
+  <summary>{{ report_line(report) }}</summary>
+  {{ report_body(report) }}
+</details>
+{% endif %}
+<div class="docbuttons">
+  <form method="post" action="/job/{{ job.id }}/document/{{ kind }}/style">
+    <select name="style" aria-label="Style">{{ style_options(styles, default_style, document.style) }}</select>
+    <button class="small">Change style</button>
+  </form>
+  <form method="post" action="/job/{{ job.id }}/document/{{ kind }}/{{ 'unapprove' if document.approved else 'approve' }}">
+    <button class="small">{{ 'Remove approval' if document.approved else 'Approve' }}</button>
+  </form>
+</div>
+{%- endmacro %}
+
+{% if job is defined and job and recommendation is defined %}
+<section class="documents">
+  <h3>Resume and cover letter</h3>
+  <div class="docpart">
+    <h4>Resume</h4>
+    {% if not resume %}
+    <p>{{ recommendation.reason }}</p>
+    {{ make_form(job, recommendation, archetypes, styles, default_style) }}
+    {% else %}
+    {%- set base = archetypes|selectattr('id', 'equalto', resume.archetype_id)|first -%}
+    {%- set base_name = base.name if base else 'an archetype that has since been removed' -%}
+    <p>
+      {% if resume.mode == 'reuse' %}Reused {{ base_name }} as it is.
+      {% elif resume.mode == 'touch-up' %}Reused {{ base_name }}, with the skills this job asks for moved first.
+      {% else %}Written for this job by Claude.{% endif %}
+      <span class="note">Made {{ resume.created_at.strftime('%b %d, %Y') }}.</span>
+    </p>
+    {{ made_controls(job, 'resume', resume, resume_report, styles, default_style) }}
+    <details class="again">
+      <summary>Make it again</summary>
+      <p class="note">{{ recommendation.reason }}</p>
+      {{ make_form(job, recommendation, archetypes, styles, default_style) }}
+    </details>
+    {% endif %}
+  </div>
+  <div class="docpart">
+    <h4>Cover letter</h4>
+    {% if letter %}
+    <p>Written for this job by Claude. <span class="note">Made {{ letter.created_at.strftime('%b %d, %Y') }}.</span></p>
+    {{ made_controls(job, 'letter', letter, letter_report, styles, default_style) }}
+    {% endif %}
+    <form method="post" action="/job/{{ job.id }}/letter" class="docform" data-wait>
+      <div class="docbuttons">
+        <button class="{{ 'small' if letter else '' }}">{{ 'Write it again (uses Claude)' if letter else 'Write a cover letter (uses Claude)' }}</button>
+        <span class="note">Takes up to a minute.</span>
+      </div>
+      <p class="wait">Working on it. This can take up to a minute.</p>
+    </form>
+  </div>
+</section>
+{% endif %}

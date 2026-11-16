@@ -2,26 +2,30 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 from datetime import date, datetime
 from pathlib import Path
+from urllib.parse import quote_plus
 
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
 
 from jobtool import db, llm, maintenance, queue
 from jobtool.config import SourceConfig, load_config, save_sources
-from jobtool.db import Application, Listing, ListingSource, Source
+from jobtool.db import Application, Archetype, Listing, ListingSource, Source
 from jobtool.enrich import run as reading_run
 from jobtool.enrich.posting import Getter, http_get
 from jobtool.ingest import registry
 from jobtool.ingest.base import ParseError
 from jobtool.paths import profile_dir
 from jobtool.profile.loader import ProfileError, load_profile
+from jobtool.resume import documents, render
+from jobtool.resume.write import WriteError
 from jobtool.sync import ensure_sources, sync_all
 
 HERE = Path(__file__).parent
@@ -53,6 +57,7 @@ def create_app(
     background: bool = False,
     get: Getter = http_get,
     reader_factory: reading_run.ReaderFactory | None = None,
+    writer_factory: reading_run.ReaderFactory | None = None,
 ) -> FastAPI:
     """Build the app.
 
@@ -68,6 +73,12 @@ def create_app(
         if reader_factory is not None:
             return reader_factory(session)
         return reading_run.make_reader(session, home, load_config(home).llm.reading_model)
+
+    def make_writer(session: Session):
+        """The model that writes resumes and letters, or None while Claude cannot be used."""
+        if writer_factory is not None:
+            return writer_factory(session)
+        return reading_run.make_reader(session, home, load_config(home).llm.writing_model)
     templates = Jinja2Templates(directory=HERE / "templates")
     app = FastAPI(title="jobtool", docs_url=None, redoc_url=None)
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
@@ -87,7 +98,9 @@ def create_app(
         except ProfileError:
             return None
 
-    def render(request: Request, template: str, session: Session, /, **context) -> HTMLResponse:
+    def render_page(
+        request: Request, template: str, session: Session, /, **context
+    ) -> HTMLResponse:
         context.update(
             counts=queue.counts(session),
             last_sync=db.get_meta(session, "last_sync"),
@@ -139,12 +152,250 @@ def create_app(
                 if fact_id in facts
             ],
             "reading": reading,
+            **documents_context(session, listing, requirements, profile),
             "job_sources": sources_for(session, listing),
             "repeat": repeat,
             "application": session.exec(
                 select(Application).where(Application.listing_id == listing.id)
             ).first(),
         }
+
+    # ----- resumes and cover letters --------------------------------------
+
+    def report_of(row) -> dict:
+        try:
+            return json.loads(row.report_json or "{}")
+        except ValueError:
+            return {}
+
+    def styles() -> list:
+        return render.list_styles(home)
+
+    def documents_context(session: Session, listing: Listing, requirements, profile) -> dict:
+        """What the job card shows about this job's resume and cover letter."""
+        resume = documents.document_for(session, listing.id, documents.RESUME)
+        letter = documents.document_for(session, listing.id, documents.LETTER)
+        usable = requirements if requirements and requirements.is_job_posting else None
+        return {
+            # jobtool.db.Document rows, or None when not prepared yet.
+            "resume": resume,
+            "letter": letter,
+            "resume_report": report_of(resume) if resume else {},
+            "letter_report": report_of(letter) if letter else {},
+            # jobtool.resume.documents.Recommendation: mode, archetype, coverage, missing, reason.
+            "recommendation": documents.recommend(session, listing, usable, profile),
+            "archetypes": [
+                row
+                for row in session.exec(select(Archetype).order_by(Archetype.name)).all()
+                if row.doc_json
+            ],
+            "styles": styles(),
+            "default_style": load_config(home).resume.style,
+        }
+
+    def requirements_of(session: Session, listing: Listing):
+        found = reading_run.read_state(session, listing)["requirements"]
+        return found if found and found.is_job_posting else None
+
+    def writing_failed(request: Request, exc: Exception) -> RedirectResponse:
+        """Send the user back with the reason. Claude problems also show in the banner."""
+        if isinstance(exc, llm.LlmProblem):
+            text = llm.TITLES[exc.kind]
+        else:
+            text = str(exc)
+        return back(request, message=quote_plus(text))
+
+    def get_archetype(session: Session, archetype_id: int) -> Archetype:
+        row = session.get(Archetype, archetype_id)
+        if row is None:
+            raise HTTPException(404, "No such archetype")
+        return row
+
+    def pdf_response(folder: Path, kind: str, extension: str):
+        path = documents.pdf_path(folder, profile_or_none(), kind).with_suffix(f".{extension}")
+        if not path.exists():
+            raise HTTPException(404, "That file has not been made yet")
+        media = "application/pdf" if extension == "pdf" else "text/plain; charset=utf-8"
+        return FileResponse(
+            path, media_type=media, filename=path.name, content_disposition_type="inline"
+        )
+
+    @app.get("/archetypes", response_class=HTMLResponse)
+    def archetypes_page(request: Request):
+        with Session(engine) as session:
+            rows = session.exec(select(Archetype).order_by(Archetype.name)).all()
+            return render_page(
+                request, "archetypes.html", session, archetypes=rows, styles=styles(),
+                default_style=load_config(home).resume.style,
+                engine_found=render.find_engine(load_config(home).resume.engine),
+            )  # fmt: skip
+
+    @app.post("/archetypes")
+    def create_archetype(
+        name: str = Form(...),
+        role_type: str = Form("any"),
+        focus: str = Form(""),
+        style: str = Form(""),
+    ):
+        if not name.strip():
+            raise HTTPException(400, "Give the archetype a name")
+        if role_type not in ("any", "quant", "swe", "adjacent"):
+            raise HTTPException(400, "Unknown role type")
+        with Session(engine) as session:
+            row = documents.create_archetype(
+                session, name=name, role_type=role_type, focus=focus, style=style
+            )
+            return RedirectResponse(f"/archetypes/{row.id}", status_code=303)
+
+    @app.get("/archetypes/{archetype_id}", response_class=HTMLResponse)
+    def archetype_page(request: Request, archetype_id: int):
+        with Session(engine) as session:
+            row = get_archetype(session, archetype_id)
+            profile = profile_or_none()
+            return render_page(
+                request, "archetype.html", session, archetype=row,
+                # jobtool.resume.model.ResumeDoc, or None before the first generation.
+                doc=documents.archetype_doc(row),
+                report=report_of(row),
+                # fact id -> the applicant's own text, to show beside each bullet.
+                facts={k: fact.text for k, fact in (profile.facts() if profile else {}).items()},
+                styles=styles(), default_style=load_config(home).resume.style,
+                has_pdf=documents.pdf_path(
+                    documents.archetype_dir(home, row), profile, documents.RESUME
+                ).exists(),
+            )  # fmt: skip
+
+    @app.post("/archetypes/{archetype_id}/{action}")
+    def archetype_action(
+        request: Request,
+        archetype_id: int,
+        action: str,
+        name: str = Form(""),
+        role_type: str = Form(""),
+        focus: str = Form(""),
+        style: str = Form(""),
+    ):
+        with Session(engine) as session:
+            row = get_archetype(session, archetype_id)
+            config, profile = load_config(home), profile_or_none()
+            if action == "generate":
+                if profile is None:
+                    return back(request, message="Fix+your+profile+first:+run+jobs+profile+check")
+                writer = make_writer(session)
+                if writer is None:
+                    return back(request, message="Claude+cannot+be+used+right+now")
+                try:
+                    documents.generate_archetype(
+                        session, home, row, reader=writer, profile=profile, config=config
+                    )
+                except (llm.LlmProblem, WriteError) as exc:
+                    return writing_failed(request, exc)
+            elif action == "style":
+                documents.restyle_archetype(
+                    session, home, row, style=style, profile=profile, config=config
+                )
+            elif action in ("approve", "unapprove"):
+                if action == "approve" and not row.doc_json:
+                    raise HTTPException(400, "Generate it first")
+                documents.set_approved(session, row, action == "approve")
+            elif action == "edit":
+                if name.strip():
+                    row.name = name.strip()
+                if role_type in ("any", "quant", "swe", "adjacent"):
+                    row.role_type = role_type
+                row.focus = focus.strip()
+                session.add(row)
+                session.commit()
+            elif action == "delete":
+                documents.delete_archetype(session, home, row)
+                return RedirectResponse("/archetypes", status_code=303)
+            else:
+                raise HTTPException(404, "Unknown action")
+        return back(request, f"/archetypes/{archetype_id}")
+
+    @app.get("/archetypes/{archetype_id}/resume.{extension}")
+    def archetype_file(archetype_id: int, extension: str):
+        if extension not in ("pdf", "tex"):
+            raise HTTPException(404, "No such file")
+        with Session(engine) as session:
+            folder = documents.archetype_dir(home, get_archetype(session, archetype_id))
+        return pdf_response(folder, documents.RESUME, extension)
+
+    @app.post("/job/{listing_id}/resume")
+    def make_job_resume(
+        request: Request,
+        listing_id: int,
+        mode: str = Form(...),
+        archetype_id: int | None = Form(None),
+        style: str = Form(""),
+    ):
+        if mode not in (documents.REUSE, documents.TOUCH_UP, documents.TAILOR):
+            raise HTTPException(400, "Unknown way to make a resume")
+        with Session(engine) as session:
+            listing = get_listing(session, listing_id)
+            profile = profile_or_none()
+            if profile is None:
+                return back(request, message="Fix+your+profile+first:+run+jobs+profile+check")
+            archetype = session.get(Archetype, archetype_id) if archetype_id else None
+            writer = make_writer(session) if mode == documents.TAILOR else None
+            if mode == documents.TAILOR and writer is None:
+                return back(request, message="Claude+cannot+be+used+right+now")
+            try:
+                documents.make_resume(
+                    session, home, listing, mode=mode, profile=profile, config=load_config(home),
+                    requirements=requirements_of(session, listing), archetype=archetype,
+                    reader=writer, style=style,
+                )  # fmt: skip
+            except (llm.LlmProblem, WriteError, ValueError) as exc:
+                return writing_failed(request, exc)
+        return back(request)
+
+    @app.post("/job/{listing_id}/letter")
+    def make_job_letter(request: Request, listing_id: int, style: str = Form("")):
+        with Session(engine) as session:
+            listing = get_listing(session, listing_id)
+            profile = profile_or_none()
+            if profile is None:
+                return back(request, message="Fix+your+profile+first:+run+jobs+profile+check")
+            writer = make_writer(session)
+            if writer is None:
+                return back(request, message="Claude+cannot+be+used+right+now")
+            try:
+                documents.make_letter(
+                    session, home, listing, profile=profile, config=load_config(home),
+                    reader=writer, requirements=requirements_of(session, listing), style=style,
+                )  # fmt: skip
+            except (llm.LlmProblem, WriteError) as exc:
+                return writing_failed(request, exc)
+        return back(request)
+
+    @app.post("/job/{listing_id}/document/{kind}/{action}")
+    def document_action(
+        request: Request, listing_id: int, kind: str, action: str, style: str = Form("")
+    ):
+        with Session(engine) as session:
+            document = documents.document_for(session, listing_id, kind)
+            if document is None:
+                raise HTTPException(404, "That document has not been made yet")
+            if action == "style":
+                documents.restyle_document(
+                    session, home, document, style=style or load_config(home).resume.style,
+                    profile=profile_or_none(), config=load_config(home),
+                )  # fmt: skip
+            elif action in ("approve", "unapprove"):
+                documents.set_approved(session, document, action == "approve")
+            elif action == "delete":
+                session.delete(document)
+                session.commit()
+            else:
+                raise HTTPException(404, "Unknown action")
+        return back(request)
+
+    @app.get("/job/{listing_id}/{kind}.{extension}")
+    def job_file(listing_id: int, kind: str, extension: str):
+        if kind not in (documents.RESUME, documents.LETTER) or extension not in ("pdf", "tex"):
+            raise HTTPException(404, "No such file")
+        return pdf_response(documents.listing_dir(home, listing_id), kind, extension)
 
     # ----- reading postings ----------------------------------------------
 
@@ -239,7 +490,7 @@ def create_app(
     def main_queue(request: Request):
         with Session(engine) as session:
             listing = next_read(session, db.MAIN)
-            return render(
+            return render_page(
                 request, "queue.html", session, mode="main", **card_context(session, listing)
             )
 
@@ -247,7 +498,7 @@ def create_app(
     def set_aside_queue(request: Request):
         with Session(engine) as session:
             listing = next_read(session, db.SET_ASIDE)
-            return render(
+            return render_page(
                 request, "queue.html", session, mode="set-aside", **card_context(session, listing)
             )
 
@@ -285,7 +536,7 @@ def create_app(
         state, title, blurb = LISTS[name]
         with Session(engine) as session:
             jobs = queue.listings_in(session, state, open_only=state == db.SET_ASIDE)
-            return render(
+            return render_page(
                 request, "list.html", session, name=name, title=title, blurb=blurb,
                 jobs=jobs[:500], total=len(jobs),
             )  # fmt: skip
@@ -294,7 +545,7 @@ def create_app(
     def job_page(request: Request, listing_id: int):
         with Session(engine) as session:
             listing = get_listing(session, listing_id)
-            return render(
+            return render_page(
                 request, "job.html", session,
                 timeline=queue.timeline(session, listing.id),
                 **card_context(session, listing),
@@ -312,7 +563,7 @@ def create_app(
             )
             if status:
                 query = query.where(Application.status == status)
-            return render(
+            return render_page(
                 request, "tracker.html", session, rows=session.exec(query).all(), status=status
             )
 
@@ -364,7 +615,7 @@ def create_app(
             ensure_sources(session, load_config(home))
             session.commit()
             rows = session.exec(select(Source).order_by(Source.id)).all()
-            return render(request, "sources.html", session, sources=rows, preview=None)
+            return render_page(request, "sources.html", session, sources=rows, preview=None)
 
     @app.post("/sources/preview", response_class=HTMLResponse)
     def preview_source(request: Request, repo: str = Form(...)):
@@ -377,7 +628,7 @@ def create_app(
                 error = ""
             except (ParseError, ValueError) as exc:
                 preview, error = None, str(exc)
-            return render(
+            return render_page(
                 request, "sources.html", session, sources=rows, preview=preview, error=error
             )
 

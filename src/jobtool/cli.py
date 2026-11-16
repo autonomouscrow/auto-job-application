@@ -263,6 +263,14 @@ def doctor(home: HomeOption = None) -> None:
                 if problem.kind != llm.MODEL:
                     break
         rows = session.exec(select(db.Usage)).all()
+    from jobtool.resume import render
+
+    engine = render.find_engine(config.resume.engine)
+    if engine:
+        typer.echo(f"{good} LaTeX: {Path(engine).stem} found, so resumes can be made into PDFs")
+    else:
+        typer.echo(f"{bad} LaTeX: no engine found. Install Tectonic or MiKTeX to get PDFs.")
+        typer.echo("     Resumes are still written as .tex files in the meantime.")
     if rows:
         costs = [llm.cost_usd(row.model, row.input_tokens, row.output_tokens) for row in rows]
         total = sum(cost for cost in costs if cost is not None)

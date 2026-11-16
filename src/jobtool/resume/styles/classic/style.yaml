@@ -1,0 +1,7 @@
+label: Classic
+description: Airier sans-serif layout with a blue accent, wider margins and looser lines.
+options:
+  accent: 1F4E9A
+  font_size: 10
+  margin: 0.65
+  bold_highlights: true

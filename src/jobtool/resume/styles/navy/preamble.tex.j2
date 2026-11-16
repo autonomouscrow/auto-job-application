@@ -1,0 +1,66 @@
+%# Shared by resume.tex.j2 and letter.tex.j2. Only \VAR{opt...} values reach here.
+\documentclass[\VAR{opt.font_size}pt,letterpaper]{article}
+
+\usepackage[hmargin=\VAR{opt.margin}in,top=0.4in,bottom=0.4in]{geometry}
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+\else
+  \usepackage[T1]{fontenc}
+\fi
+\usepackage[scaled=0.95]{helvet}
+\renewcommand{\familydefault}{\sfdefault}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{tabularx}
+\usepackage[hidelinks,bookmarks=false]{hyperref}
+
+\definecolor{accent}{HTML}{\VAR{opt.accent}}
+\definecolor{ink}{HTML}{1A1A1A}
+\definecolor{muted}{HTML}{555555}
+\color{ink}
+
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0pt}
+\setlength{\tabcolsep}{0pt}
+
+\titleformat{\section}
+  {\bfseries\large\color{accent}}
+  {}{0pt}{\MakeUppercase}[\vspace{0.15ex}{\color{accent}\titlerule[0.6pt]}]
+\titlespacing*{\section}{0pt}{1.3ex}{0.8ex}
+
+% \entry{title}{dates}{subtitle}{location}
+\newcommand{\entry}[4]{%
+  \begin{tabularx}{\linewidth}{@{}X r@{}}
+    \textbf{#1} & \textbf{#2} \\
+    \textit{#3} & \textit{\color{muted}#4} \\
+  \end{tabularx}\par}
+
+% \entryshort{title}{dates}
+\newcommand{\entryshort}[2]{%
+  \begin{tabularx}{\linewidth}{@{}X r@{}}
+    \textbf{#1} & \textbf{#2} \\
+  \end{tabularx}\par}
+
+% \project{name}{stack}{dates}
+\newcommand{\project}[3]{%
+  \begin{tabularx}{\linewidth}{@{}X r@{}}
+    \textbf{#1} \,{\color{muted}$|$}\, \textit{\color{muted}#2} & \textbf{#3} \\
+  \end{tabularx}\par}
+
+% \projectshort{name}{dates}
+\newcommand{\projectshort}[2]{%
+  \begin{tabularx}{\linewidth}{@{}X r@{}}
+    \textbf{#1} & \textbf{#2} \\
+  \end{tabularx}\par}
+
+\newenvironment{bullets}
+  {\begin{itemize}[leftmargin=1.3em, label={\color{accent}\textbullet},
+     itemsep=0.2ex, topsep=0.3ex, parsep=0pt, partopsep=0pt]}
+  {\end{itemize}\vspace{0.55ex}}
+
+\newcommand{\contactsep}{\enspace{\color{accent}$\cdot$}\enspace}

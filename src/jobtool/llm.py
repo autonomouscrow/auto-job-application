@@ -90,8 +90,15 @@ class Reader(Protocol):
 
     def check(self) -> None: ...
 
-    def parse(self, *, system: str, user: str, schema: type[T], max_tokens: int = 4000) -> Reply[T]:
-        ...
+    def parse(
+        self,
+        *,
+        system: str,
+        user: str,
+        schema: type[T],
+        max_tokens: int = 4000,
+        thinking: bool = False,
+    ) -> Reply[T]: ...
 
 
 def load_key(home: Path) -> str | None:
@@ -154,11 +161,22 @@ class ClaudeReader:
         except anthropic.AnthropicError as exc:
             raise translate(exc) from None
 
-    def parse(self, *, system: str, user: str, schema: type[T], max_tokens: int = 4000) -> Reply[T]:
+    def parse(
+        self,
+        *,
+        system: str,
+        user: str,
+        schema: type[T],
+        max_tokens: int = 4000,
+        thinking: bool = False,
+    ) -> Reply[T]:
+        """One structured call. ``thinking`` lets the model reason first (for writing)."""
         import anthropic
 
+        extra = {"thinking": {"type": "adaptive"}, "timeout": 600.0} if thinking else {}
         try:
             response = self._client.messages.parse(
+                **extra,
                 model=self.model,
                 max_tokens=max_tokens,
                 system=[

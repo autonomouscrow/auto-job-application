@@ -1,0 +1,15 @@
+\begin{center}
+  {\Huge\bfseries \VAR{doc.header.name|tex}}\\[3pt]
+  {\small%
+\BLOCK{for c in doc.header.contacts}
+\BLOCK{if not loop.first}
+    \contactsep%
+\BLOCK{endif}
+\BLOCK{if c.url|url}
+    \href{\VAR{c.url|url}}{\VAR{c.text|tex}}%
+\BLOCK{else}
+    \VAR{c.text|tex}%
+\BLOCK{endif}
+\BLOCK{endfor}
+  }
+\end{center}

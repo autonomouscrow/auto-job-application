@@ -65,6 +65,16 @@ class Llm(Lenient):
     refresh_days: int = 4
 
 
+class Resume(Lenient):
+    # A built-in style ("navy", "classic") or a folder in <home>/resume/styles/.
+    style: str = "navy"
+    # Overrides for the style's options: accent, font_size, margin, bold_highlights.
+    options: dict = Field(default_factory=dict)
+    # "tectonic", "pdflatex", "xelatex" or "lualatex"; None picks the first one installed.
+    engine: str | None = None
+    projects_title: str = "Projects"
+
+
 class SourceConfig(Lenient):
     repo: str
     branch: str = "HEAD"
@@ -83,6 +93,7 @@ class Config(Lenient):
     ingest: Ingest = Field(default_factory=Ingest)
     applicant: Applicant = Field(default_factory=Applicant)
     llm: Llm = Field(default_factory=Llm)
+    resume: Resume = Field(default_factory=Resume)
     sources: list[SourceConfig] = Field(default_factory=list)
 
 

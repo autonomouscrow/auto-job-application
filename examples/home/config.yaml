@@ -32,6 +32,11 @@ llm:
   read_ahead: 10                     # how many jobs at the front of the queue are read ahead of you
   refresh_days: 4                    # fetch a posting again after this many days, to notice it closed
 
+resume:
+  style: navy                        # navy, classic, or a folder in resume/styles/
+  # options: {accent: "1F3A5F", font_size: 10, margin: 0.5, bold_highlights: true}
+  projects_title: Projects
+
 guard:
   # Extra strings the commit guard should refuse, beyond name, email, and phone.
   extra_terms:

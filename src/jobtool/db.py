@@ -156,6 +156,45 @@ class Usage(SQLModel, table=True):
     output_tokens: int = 0
 
 
+class Archetype(SQLModel, table=True):
+    """A resume for one kind of role, written once and reused for similar jobs."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    slug: str = Field(index=True, unique=True)
+    name: str
+    # "quant", "swe", "adjacent", or "any".
+    role_type: str = "any"
+    # The user's own guidance on what this resume should lean toward.
+    focus: str = ""
+    style: str = ""
+    # A jobtool.resume.model.ResumeDoc, empty until first generated.
+    doc_json: str = ""
+    report_json: str = "{}"
+    approved: bool = False
+    pages: int = 0
+    error: str = ""
+    updated_at: NaiveDatetime
+
+
+class Document(SQLModel, table=True):
+    """A resume or cover letter prepared for one job."""
+
+    __table_args__ = (UniqueConstraint("listing_id", "kind"),)
+    id: int | None = Field(default=None, primary_key=True)
+    listing_id: int = Field(foreign_key="listing.id", index=True)
+    kind: str  # "resume" or "letter"
+    # How it was made: "reuse", "touch-up", or "tailor".
+    mode: str = "tailor"
+    archetype_id: int | None = None
+    style: str = ""
+    doc_json: str = ""
+    report_json: str = "{}"
+    pages: int = 0
+    error: str = ""
+    approved: bool = False
+    created_at: NaiveDatetime
+
+
 class Meta(SQLModel, table=True):
     key: str = Field(primary_key=True)
     value: str

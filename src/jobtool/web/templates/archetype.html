@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% from "_documents.html" import bold, style_options, report_line, report_body %}
+{% block title %}{{ archetype.name }}{% endblock %}
+{% block mainclass %}wide{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <div>
+    <a href="/archetypes" class="note">All archetype resumes</a>
+    <h2>{{ archetype.name }}
+      {% if not doc %}<span class="chip">not generated yet</span>
+      {% elif archetype.approved %}<span class="chip have">approved</span>
+      {% else %}<span class="chip status-draft">draft, not approved</span>{% endif %}
+    </h2>
+  </div>
+</div>
+
+<div class="card">
+  <form method="post" action="/archetypes/{{ archetype.id }}/edit" class="stack">
+    <div class="docfields">
+      <label>Name <input type="text" name="name" value="{{ archetype.name }}" required size="24"></label>
+      <label>Role type
+        <select name="role_type">
+          {% for value, label in [('any', 'Any'), ('quant', 'Quant'), ('swe', 'SWE'), ('adjacent', 'Adjacent')] %}
+          <option value="{{ value }}" {{ 'selected' if value == archetype.role_type }}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <label class="block">What should this resume lean toward?
+      <textarea name="focus" placeholder="For example: backend services and data pipelines; put Python and SQL first.">{{ archetype.focus }}</textarea>
+    </label>
+    <div><button class="small">Save changes</button> <span class="note">Changes take effect the next time it is written.</span></div>
+  </form>
+
+  <div class="archactions">
+    <form method="post" action="/archetypes/{{ archetype.id }}/generate" data-wait>
+      <button class="{{ '' if doc else 'primary' }}">{{ 'Write it again' if doc else 'Write it with Claude' }}</button>
+      <span class="note">Takes up to a minute{{ ' and replaces the current text' if doc }}.</span>
+      <span class="wait">Working on it. This can take up to a minute.</span>
+    </form>
+    <form method="post" action="/archetypes/{{ archetype.id }}/style">
+      <select name="style" aria-label="Style">{{ style_options(styles, default_style, archetype.style) }}</select>
+      <button class="small">Change style</button>
+      <span class="note">Same wording, no cost.</span>
+    </form>
+    {% if doc %}
+    <form method="post" action="/archetypes/{{ archetype.id }}/{{ 'unapprove' if archetype.approved else 'approve' }}">
+      <button class="{{ 'small' if archetype.approved else 'primary' }}">{{ 'Remove approval' if archetype.approved else 'Approve' }}</button>
+    </form>
+    {% endif %}
+    <form method="post" action="/archetypes/{{ archetype.id }}/delete" onsubmit="return confirm('Delete this archetype resume?');">
+      <button class="small danger">Delete</button>
+    </form>
+  </div>
+  {% if archetype.error %}<div class="warnbox">{{ archetype.error }}</div>{% endif %}
+  {% if doc and archetype.pages > 1 %}<div class="warnbox">It runs to {{ archetype.pages }} pages.</div>{% endif %}
+</div>
+
+{% if doc %}
+<div class="archgrid">
+  {% if has_pdf %}
+  <div class="pdfpane">
+    <div class="doclinks">
+      <a href="/archetypes/{{ archetype.id }}/resume.pdf" target="_blank" rel="noopener">Open the PDF</a>
+      <a href="/archetypes/{{ archetype.id }}/resume.tex" target="_blank" rel="noopener">Open the .tex</a>
+      <span class="note">{{ archetype.pages }} page{{ '' if archetype.pages == 1 else 's' }}, style {{ archetype.style or default_style }}</span>
+    </div>
+    <iframe src="/archetypes/{{ archetype.id }}/resume.pdf" title="The resume as a PDF"></iframe>
+  </div>
+  {% endif %}
+  <div class="card sources">
+    <h3>Where every line comes from</h3>
+    {% for section in doc.sections %}
+    <h4>{{ section.title }}</h4>
+    {% for block in section.blocks %}
+    <div class="srcblock">
+      <div class="srctitle">{{ block.title }}{% if block.subtitle %}<span class="note">, {{ block.subtitle }}</span>{% endif %}
+        {% if block.dates %}<span class="note"> · {{ block.dates|replace('--', 'to') }}</span>{% endif %}</div>
+      <ul class="bullets">
+        {% for line in block.lines %}
+        <li>
+          <div class="bullet">{{ bold(line.text) }}</div>
+          {% for fact_id in line.fact_ids %}
+          <div class="cite">From your profile: {{ facts[fact_id] if fact_id in facts else 'a fact that is no longer in your profile (' ~ fact_id ~ ')' }}</div>
+          {% endfor %}
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endfor %}
+    {% endfor %}
+    {% if doc.skills %}
+    <h4>{{ doc.skills_title }}</h4>
+    <dl class="facts">
+      {% for row in doc.skills %}<dt>{{ row.label }}</dt><dd>{{ row.items|join(', ') }}</dd>{% endfor %}
+    </dl>
+    <p class="note">Skills are copied from the skills list in your profile.</p>
+    {% endif %}
+
+    <h3>The verifier's report</h3>
+    <p>{{ report_line(report) }}.</p>
+    {{ report_body(report) }}
+  </div>
+</div>
+{% endif %}
+{% endblock %}

@@ -113,6 +113,7 @@
   <form method="post" action="/job/{{ job.id }}/read"><button class="small">Read again</button></form>
 </div>
 {% endif %}
+{% include "_documents.html" %}
 <div class="note">
   Listed by {{ job_sources|join(', ') or 'unknown source' }}.
   <a href="{{ job.url }}" target="_blank" rel="noopener" id="posting">Open the posting</a>

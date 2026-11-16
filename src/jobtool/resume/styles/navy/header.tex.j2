@@ -1,0 +1,15 @@
+\begin{center}
+  {\fontsize{24}{26}\selectfont\bfseries \VAR{doc.header.name|tex}}\\[0.6ex]
+  {\small%
+\BLOCK{for c in doc.header.contacts}
+\BLOCK{if not loop.first}
+    \contactsep%
+\BLOCK{endif}
+\BLOCK{if c.url|url}
+    \href{\VAR{c.url|url}}{\VAR{c.text|tex}}%
+\BLOCK{else}
+    \VAR{c.text|tex}%
+\BLOCK{endif}
+\BLOCK{endfor}
+  }
+\end{center}

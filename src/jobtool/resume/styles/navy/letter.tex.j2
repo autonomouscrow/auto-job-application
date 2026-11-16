@@ -1,0 +1,36 @@
+%# Navy cover letter: same preamble and header as the resume.
+\BLOCK{include "preamble.tex.j2"}
+\newgeometry{hmargin=\VAR{opt.margin}in,top=0.6in,bottom=0.8in}
+
+\begin{document}
+
+\BLOCK{include "header.tex.j2"}
+\vspace{-0.6ex}
+{\color{accent}\rule{\linewidth}{0.6pt}}
+
+\vspace{3ex}
+\VAR{doc.date|tex}
+
+\vspace{2ex}
+\textbf{\VAR{doc.company|tex}}\BLOCK{if doc.role}\\
+\textit{\color{muted}\VAR{doc.role|tex}}\BLOCK{endif}
+
+
+\vspace{3ex}
+\VAR{doc.greeting|tex}
+
+\vspace{1.5ex}
+{\setlength{\parskip}{1.4ex}\linespread{1.08}\selectfont
+\BLOCK{for p in doc.paragraphs}
+\VAR{p.text|rich}
+
+\BLOCK{endfor}
+}
+
+\vspace{2ex}
+\VAR{doc.closing|tex}
+
+\vspace{4ex}
+\textbf{\VAR{doc.header.name|tex}}
+
+\end{document}

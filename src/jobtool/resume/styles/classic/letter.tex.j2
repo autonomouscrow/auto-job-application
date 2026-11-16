@@ -1,0 +1,36 @@
+%# Classic cover letter: same preamble and header as the resume.
+\BLOCK{include "preamble.tex.j2"}
+\newgeometry{left=\VAR{opt.margin}in,right=\VAR{opt.margin}in,top=0.8in,bottom=0.8in}
+
+\begin{document}
+
+\BLOCK{include "header.tex.j2"}
+\vspace{-6pt}
+{\color{accent}\rule{\linewidth}{0.8pt}}
+
+\vspace{18pt}
+\VAR{doc.date|tex}
+
+\vspace{12pt}
+\textbf{\VAR{doc.company|tex}}\BLOCK{if doc.role}\\
+\textit{\VAR{doc.role|tex}}\BLOCK{endif}
+
+
+\vspace{18pt}
+\VAR{doc.greeting|tex}
+
+\vspace{8pt}
+{\setlength{\parskip}{8pt}
+\BLOCK{for p in doc.paragraphs}
+\VAR{p.text|rich}
+
+\BLOCK{endfor}
+}
+
+\vspace{12pt}
+\VAR{doc.closing|tex}
+
+\vspace{24pt}
+\textbf{\VAR{doc.header.name|tex}}
+
+\end{document}
