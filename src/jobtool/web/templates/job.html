@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 {% block title %}{{ job.company }}: {{ job.title }}{% endblock %}
+{% block mainclass %}{{ 'wide' if job.state == 'in_progress' }}{% endblock %}
 {% block content %}
+{% set applying = job.state == 'in_progress' %}
+{% if applying %}<div class="applygrid">{% endif %}
 <div class="card">
   {% include "_card.html" %}
   <div class="actions">
@@ -13,6 +16,15 @@
     {% if job.state in ('main', 'set_aside', 'in_progress', 'filtered') %}<form method="post" action="/job/{{ job.id }}/reject"><button class="danger">Reject</button></form>{% endif %}
   </div>
 </div>
+{% if applying %}
+<div class="card assistcard">{% include "_assist.html" %}</div>
+</div>
+{% elif assist %}
+<details class="card assistlater">
+  <summary>Details and answers to copy into an application form</summary>
+  {% include "_assist.html" %}
+</details>
+{% endif %}
 {% if application %}
 <div class="card" style="margin-top:16px">
   <h2>Application</h2>

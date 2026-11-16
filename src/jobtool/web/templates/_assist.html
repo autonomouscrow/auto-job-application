@@ -1,0 +1,154 @@
+{#- Everything to paste into an employer's application form. The tool never fills a form in. -#}
+
+{% macro copy(value, label='Copy', source='') -%}
+<button type="button" class="small copy" data-copy="{{ value }}"{% if source %} data-copy-from="{{ source }}"{% endif %}>{{ label }}</button>
+{%- endmacro %}
+
+{% if assist is defined and job is defined and job %}
+{% if not assist %}
+<section class="assist" id="assist">
+  <p class="note">Your details cannot be shown because your profile has a problem. Run <code>jobs profile check</code> to see it.</p>
+</section>
+{% else %}
+{%- set source_labels = {'bank': 'From your saved answers', 'drafted': 'Drafted by Claude', 'written': 'Written by you'} -%}
+<section class="assist" id="assist">
+  <h3>Apply: details and answers to copy</h3>
+  <p class="note">Paste these into the employer's form. Nothing is filled in or sent for you.</p>
+
+  <div class="apart">
+    <h4>Your details</h4>
+    <dl class="copylist">
+      {% for group, items in assist.groups.items() %}
+      <dt class="agroup">{{ group }}</dt>
+      {% for item in items %}
+      <dt>{{ item.label }}</dt>
+      <dd><span class="value">{{ item.value }}</span>{{ copy(item.value) }}</dd>
+      {% endfor %}
+      {% endfor %}
+    </dl>
+  </div>
+
+  <div class="apart">
+    <h4>Files</h4>
+    <dl class="copylist">
+      {% for kind, label in [('resume', 'Resume'), ('letter', 'Cover letter')] %}
+      {% set path = assist.files[kind] %}
+      <dt>{{ label }}</dt>
+      {% if path %}
+      <dd><code class="value">{{ path }}</code>{{ copy(path, 'Copy path') }}
+        <a href="/job/{{ job.id }}/{{ kind }}.pdf" target="_blank" rel="noopener">Open</a></dd>
+      {% else %}
+      <dd class="note">Not made yet. Make it under "Resume and cover letter".</dd>
+      {% endif %}
+      {% endfor %}
+    </dl>
+    <p class="note">Paste a path into the form's file picker to attach the file.</p>
+  </div>
+
+  <div class="apart">
+    <h4>Questions on the form</h4>
+    <form method="get" action="{{ request.url.path }}#assist" class="askform" data-wait data-ask>
+      <textarea name="q" rows="2" placeholder="Paste a question from the form" aria-label="Question from the form">{{ assist.question }}</textarea>
+      <input type="hidden" name="question" value="{{ assist.question }}">
+      <div class="docbuttons">
+        <button class="small" data-lookup>Find a saved answer</button>
+        <button class="small" formmethod="post" formaction="/job/{{ job.id }}/answer/draft">Draft an answer (uses Claude)</button>
+        <label class="note">About <input type="number" name="words" value="{{ assist.default_words }}" min="30" max="400" step="10" class="words"> words</label>
+      </div>
+      <p class="wait">Working on it. A draft can take up to a minute.</p>
+    </form>
+
+    {% if assist.question %}
+    <div class="lookup">
+      {% if assist.suggestions %}
+      <p class="note">Saved answers to similar questions:</p>
+      <ul class="answers">
+        {% for item in assist.suggestions %}
+        <li>
+          <div class="aq">{{ item.answer.question }}</div>
+          <div class="atext">{{ item.answer.answer }}</div>
+          <div class="docbuttons">
+            {{ copy(item.answer.answer) }}
+            <form method="post" action="/job/{{ job.id }}/answer">
+              <input type="hidden" name="bank_id" value="{{ item.answer.id }}">
+              <input type="hidden" name="question" value="{{ assist.question }}">
+              <button class="small">Use for this job</button>
+            </form>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="note">No saved answer is close to this question. Draft one with Claude, or write it yourself below.</p>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <details class="write"{% if assist.question and not assist.suggestions %} open{% endif %}>
+      <summary>Write an answer yourself</summary>
+      <form method="post" action="/job/{{ job.id }}/answer" class="stack">
+        <label class="block">Question
+          <textarea name="question" rows="2">{{ assist.question }}</textarea></label>
+        <label class="block">Answer
+          <textarea name="answer" rows="4"></textarea></label>
+        <div class="docbuttons">
+          <button class="small">Keep for this job</button>
+          <label class="note"><input type="checkbox" name="to_bank" value="1"> Also add to my saved answers</label>
+        </div>
+      </form>
+    </details>
+  </div>
+
+  <div class="apart" id="answers">
+    <h4>Answers for this job</h4>
+    {% if not assist.answers %}
+    <p class="note">None yet. Answers you use, draft, or write appear here.</p>
+    {% else %}
+    <ul class="answers">
+      {% for row in assist.answers %}
+      <li>
+        <div class="aq">{{ row.question }} <span class="note source">{{ source_labels.get(row.source, row.source) }}</span></div>
+        <form method="post" action="/job/{{ job.id }}/answer" id="edit-{{ row.id }}">
+          <input type="hidden" name="answer_id" value="{{ row.id }}">
+          <input type="hidden" name="question" value="{{ row.question }}">
+          <textarea name="answer" rows="{{ [2, (row.answer|length // 70) + 1]|max }}" id="answer-{{ row.id }}" aria-label="Answer">{{ row.answer }}</textarea>
+        </form>
+        {% set bankable = assist.fold(row.question) not in assist.banked %}
+        {% if bankable %}<form method="post" action="/job/{{ job.id }}/answer/{{ row.id }}/bank" id="bank-{{ row.id }}"></form>{% endif %}
+        <form method="post" action="/job/{{ job.id }}/answer/{{ row.id }}/delete" id="delete-{{ row.id }}"></form>
+        <div class="docbuttons">
+          {{ copy(row.answer, source='answer-' ~ row.id) }}
+          <button class="small" form="edit-{{ row.id }}">Save</button>
+          {% if bankable %}<button class="small" form="bank-{{ row.id }}">Add to my saved answers</button>{% endif %}
+          <button class="small danger" form="delete-{{ row.id }}">Delete</button>
+        </div>
+        {% if row.remarks %}
+        <div class="remarks">Check before sending:
+          <ul>{% for remark in row.remarks %}<li>{{ remark }}</li>{% endfor %}</ul>
+        </div>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+
+  <details class="apart bank">
+    <summary>All saved answers ({{ assist.bank|length }})</summary>
+    {% if assist.bank %}
+    <ul class="answers">
+      {% for item in assist.bank %}
+      <li>
+        <div class="aq">{{ item.question }}</div>
+        <div class="atext">{{ item.answer }}</div>
+        <div class="docbuttons">{{ copy(item.answer) }}</div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="note">No saved answers yet. They live in profile/answers.yaml.</p>
+    {% endif %}
+  </details>
+</section>
+{% endif %}
+{% endif %}

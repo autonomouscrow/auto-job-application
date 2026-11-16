@@ -206,6 +206,29 @@ page lists what was cut.
 Files are kept in your home folder under `data/archetypes/` and
 `data/documents/<job id>/`.
 
+## Applying
+
+Pressing **Apply** opens the employer's form in a new tab and puts an
+**apply kit** under the job. The tool never fills in or submits a form. It
+puts everything you need to paste next to it:
+
+- **Your details**: name, email, phone, links, school, degree, dates, work
+  history, citizenship, and your work authorization per country, each with a
+  Copy button. They come straight from your profile.
+- **Files**: where this job's resume and cover letter PDFs are on your disk,
+  ready to paste into the form's file picker.
+- **Questions on the form**: paste a question and the app looks for a saved
+  answer to a similar one in `profile/answers.yaml`. If there is none, Claude
+  can draft one from your profile. A drafted answer goes through the same
+  fact check as a resume: it must cite facts, and anything your profile does
+  not say sends it back once and then refuses it, so you write that one
+  yourself. You can edit any answer before copying it.
+- **Saved answers grow as you apply**: any answer you keep can be added to
+  your saved answers with one click. It is appended to `answers.yaml` and
+  nothing else in the file is touched.
+
+Answers kept for a job stay on its page, so you can see later what you sent.
+
 ## Setting up the Claude API key
 
 Reading postings needs a Claude API key.
@@ -260,7 +283,9 @@ needs more: it receives every education, experience, and project entry with
 its heading (so school and employer names are included), every fact, and
 your skills list, plus the job's details when tailoring. It still never
 receives your name, email, phone, address, or links; those are added to the
-document on your machine. Nothing else leaves your machine.
+document on your machine. When an answer to a form question is drafted, the
+model receives the same profile entries plus your saved answers and stories
+and the question itself. Nothing else leaves your machine.
 
 ## Roadmap
 
@@ -271,7 +296,7 @@ document on your machine. Nothing else leaves your machine.
 - [x] **Phase 2:** posting fetch, requirements extraction, filters, full
       match score
 - [x] **Phase 3:** archetype resumes, tailoring, the verifier, cover letters
-- [ ] **Phase 4:** application assist panel and reusable answer bank
+- [x] **Phase 4:** application assist panel and reusable answer bank
 - [ ] **Phase 5:** board view, stats, scheduled sync, reminders
 
 ## Getting started
@@ -309,7 +334,7 @@ The app shows one job at a time, newest finds first, then by match score.
 
 | Button | Key | What happens |
 |---|---|---|
-| Apply | `A` | opens the posting in a new tab and keeps the job on screen as "in progress" |
+| Apply | `A` | opens the posting in a new tab and keeps the job on screen as "in progress", with the apply kit under it |
 | I submitted it | `A` | records the application and shows the next job |
 | Set aside | `S` | moves the job to a separate queue, with an optional note |
 | Reject | `R` | the job is never shown again |

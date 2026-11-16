@@ -195,6 +195,29 @@ class Document(SQLModel, table=True):
     created_at: NaiveDatetime
 
 
+class JobAnswer(SQLModel, table=True):
+    """An answer prepared for one application question on one job."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    listing_id: int = Field(foreign_key="listing.id", index=True)
+    question: str
+    answer: str
+    fact_ids_json: str = "[]"
+    # "bank" (a saved answer reused), "drafted" (written by Claude), or "written" (typed).
+    source: str = "written"
+    # Fact-check remarks on the current text. Advice only: the user has the last word.
+    remarks_json: str = "[]"
+    updated_at: NaiveDatetime
+
+    @property
+    def fact_ids(self) -> list[str]:
+        return json.loads(self.fact_ids_json)
+
+    @property
+    def remarks(self) -> list[str]:
+        return json.loads(self.remarks_json)
+
+
 class Meta(SQLModel, table=True):
     key: str = Field(primary_key=True)
     value: str

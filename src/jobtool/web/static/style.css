@@ -158,3 +158,47 @@ ul.bullets { margin: 4px 0; padding-left: 18px; }
 ul.bullets > li { margin: 6px 0; font-size: 14px; }
 .cite { font-size: 12.5px; color: var(--muted); border-left: 2px solid var(--line); padding-left: 8px;
   margin-top: 2px; }
+
+/* ----- applying: details and answers to copy ----- */
+.applygrid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 16px;
+  align-items: start; }
+@media (max-width: 960px) { .applygrid { grid-template-columns: minmax(0, 1fr); } }
+.card.assistcard { padding: 18px; }
+details.assistlater { margin-top: 16px; padding: 14px 22px; }
+details.assistlater[open] summary { margin-bottom: 10px; }
+.assist h3 { font-size: 16px; margin: 0 0 2px; }
+.assist > .note { margin: 0 0 8px; }
+.assist h4 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted);
+  margin: 0 0 6px; }
+.apart { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+details.apart summary { font-size: 14px; }
+dl.copylist { display: grid; grid-template-columns: minmax(0, 9em) minmax(0, 1fr);
+  gap: 2px 12px; margin: 0; font-size: 14px; }
+dl.copylist dt { color: var(--muted); padding-top: 3px; overflow-wrap: anywhere; }
+dl.copylist dt.agroup { grid-column: 1 / -1; color: var(--text); font-size: 13px; font-weight: 600;
+  padding-top: 8px; }
+dl.copylist dt.agroup:first-child { padding-top: 0; }
+dl.copylist dd { margin: 0; display: flex; gap: 8px; align-items: flex-start; padding: 1px 0; }
+dl.copylist dd.note { padding-top: 3px; }
+dl.copylist .value { flex: 1; min-width: 0; overflow-wrap: anywhere; padding-top: 2px; }
+dl.copylist code.value { font-size: 12.5px; }
+dl.copylist dd a { font-size: 13px; padding-top: 3px; }
+button.copy { flex: none; padding: 1px 8px; font-size: 12px; min-width: 58px; }
+.askform textarea, .assist form.stack textarea { min-height: 0; font-size: 14px; }
+.askform .docbuttons label { display: flex; gap: 4px; align-items: center; }
+input.words { width: 64px; font: inherit; font-size: 13px; padding: 2px 6px; color: var(--text);
+  background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+.lookup { margin-top: 10px; }
+.lookup > .note { margin: 0 0 4px; }
+ul.answers { list-style: none; padding: 0; margin: 6px 0 0; }
+ul.answers > li { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 0 0 8px; }
+ul.answers .aq { font-weight: 600; font-size: 14px; margin-bottom: 4px; }
+ul.answers .atext { font-size: 14px; white-space: pre-line; }
+ul.answers .docbuttons { margin-top: 6px; }
+ul.answers textarea { min-height: 0; font-size: 14px; display: block; }
+ul.answers .source { font-weight: 400; margin-left: 6px; white-space: nowrap; }
+details.write { margin-top: 10px; font-size: 14px; }
+details.write form.stack { gap: 8px; }
+.remarks { margin-top: 6px; border-left: 3px solid var(--warn); background: var(--chip);
+  border-radius: 0 8px 8px 0; padding: 4px 10px; font-size: 13px; }
+.remarks ul { margin: 2px 0; padding-left: 18px; }

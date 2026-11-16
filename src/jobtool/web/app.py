@@ -15,9 +15,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
 
-from jobtool import db, llm, maintenance, queue
+from jobtool import assist, db, llm, maintenance, queue
 from jobtool.config import SourceConfig, load_config, save_sources
-from jobtool.db import Application, Archetype, Listing, ListingSource, Source
+from jobtool.db import Application, Archetype, JobAnswer, Listing, ListingSource, Source
 from jobtool.enrich import run as reading_run
 from jobtool.enrich.posting import Getter, http_get
 from jobtool.ingest import registry
@@ -116,11 +116,15 @@ def create_app(
             raise HTTPException(404, "No such job")
         return listing
 
-    def back(request: Request, default: str = "/", message: str = "") -> RedirectResponse:
+    def back(
+        request: Request, default: str = "/", message: str = "", anchor: str = ""
+    ) -> RedirectResponse:
         target = request.headers.get("referer") or default
-        target = target.split("?", 1)[0]
+        target = target.split("#", 1)[0].split("?", 1)[0]
         if message:
             target += f"?message={message}"
+        if anchor:
+            target += f"#{anchor}"
         return RedirectResponse(target, status_code=303)
 
     def sources_for(session: Session, listing: Listing) -> list[str]:
@@ -131,7 +135,7 @@ def create_app(
         ).all()
         return list(rows)
 
-    def card_context(session: Session, listing: Listing | None) -> dict:
+    def card_context(session: Session, listing: Listing | None, question: str = "") -> dict:
         if listing is None:
             return {"job": None}
         repeat = session.get(Listing, listing.repeat_of) if listing.repeat_of else None
@@ -153,6 +157,7 @@ def create_app(
             ],
             "reading": reading,
             **documents_context(session, listing, requirements, profile),
+            "assist": assist_context(session, listing, profile, question),
             "job_sources": sources_for(session, listing),
             "repeat": repeat,
             "application": session.exec(
@@ -397,6 +402,135 @@ def create_app(
             raise HTTPException(404, "No such file")
         return pdf_response(documents.listing_dir(home, listing_id), kind, extension)
 
+    # ----- applying: details, files and answers to copy -------------------
+
+    def assist_context(session: Session, listing: Listing, profile, question: str) -> dict | None:
+        """What the panel beside an application form shows. None without a profile."""
+        if profile is None:
+            return None
+        groups: dict[str, list] = {}
+        for item in assist.details(profile):
+            groups.setdefault(item.group, []).append(item)
+        question = " ".join(question.split())[:1000]
+        return {
+            # {"You": [Detail(group, label, value), ...], "Links": [...], ...} in display order.
+            "groups": groups,
+            # {"resume": Path or None, "letter": Path or None}: PDFs for the form's file picker.
+            "files": assist.document_files(home, profile, listing.id),
+            # jobtool.db.JobAnswer rows kept for this job: question, answer, source, remarks.
+            "answers": assist.answers_for(session, listing.id),
+            # The question being looked up (from ?q=), and saved answers to similar questions:
+            # Suggestion(answer=profile Answer(id, question, answer), score 0..1), best first.
+            "question": question,
+            "suggestions": assist.suggest(profile, question) if question else [],
+            # Every saved answer, for browsing: profile Answer(id, question, answer).
+            "bank": profile.answers,
+            # Folded questions already in the bank, so "save to bank" is offered only once.
+            "banked": {assist.fold(item.question) for item in profile.answers},
+            "fold": assist.fold,
+            "default_words": assist.DEFAULT_WORDS,
+        }
+
+    def get_answer(session: Session, listing_id: int, answer_id: int) -> JobAnswer:
+        row = session.get(JobAnswer, answer_id)
+        if row is None or row.listing_id != listing_id:
+            raise HTTPException(404, "No such answer")
+        return row
+
+    def bank_message(question: str, answer: str, fact_ids: list[str]) -> str:
+        """Add to the bank and say what happened, in words for the message bar."""
+        try:
+            assist.add_to_bank(home, question, answer, fact_ids)
+        except (ValueError, ProfileError) as exc:
+            return f"Not added to your saved answers: {exc}"
+        return "Added to your saved answers"
+
+    @app.post("/job/{listing_id}/answer/draft")
+    def draft_job_answer(
+        request: Request,
+        listing_id: int,
+        question: str = Form(""),
+        q: str = Form(""),
+        words: int = Form(assist.DEFAULT_WORDS),
+    ):
+        question = q or question  # the question box is named "q" for looking up
+        with Session(engine) as session:
+            listing = get_listing(session, listing_id)
+            profile = profile_or_none()
+            if profile is None:
+                return back(request, message="Fix+your+profile+first:+run+jobs+profile+check")
+            if not question.strip():
+                return back(request, message="Paste+the+question+first", anchor="assist")
+            writer = make_writer(session)
+            if writer is None:
+                return back(request, message="Claude+cannot+be+used+right+now", anchor="assist")
+            try:
+                assist.draft_answer(
+                    session, writer, profile, listing, question,
+                    requirements=requirements_of(session, listing), words=words,
+                )  # fmt: skip
+            except (llm.LlmProblem, WriteError) as exc:
+                text = llm.TITLES[exc.kind] if isinstance(exc, llm.LlmProblem) else str(exc)
+                return back(request, message=quote_plus(text), anchor="assist")
+        return back(request, anchor="answers")
+
+    @app.post("/job/{listing_id}/answer")
+    def save_job_answer(
+        request: Request,
+        listing_id: int,
+        question: str = Form(""),
+        answer: str = Form(""),
+        answer_id: int | None = Form(None),
+        bank_id: str = Form(""),
+        to_bank: str = Form(""),
+    ):
+        """Keep an answer for this job: typed, edited, or copied from the saved answers."""
+        with Session(engine) as session:
+            listing = get_listing(session, listing_id)
+            profile = profile_or_none()
+            row = get_answer(session, listing_id, answer_id) if answer_id else None
+            fact_ids, source, remarks = None, assist.WRITTEN, []
+            if bank_id and profile is not None:
+                saved = next((item for item in profile.answers if item.id == bank_id), None)
+                if saved is None:
+                    raise HTTPException(404, "No such saved answer")
+                question, answer = question.strip() or saved.question, saved.answer
+                fact_ids, source = list(saved.facts), assist.BANK
+            if not question.strip() or not answer.strip():
+                return back(
+                    request, message="An+answer+needs+a+question+and+some+text", anchor="assist"
+                )
+            if row is not None:
+                source = row.source
+                # An edit to Claude's draft is checked again. The remarks are advice only.
+                if row.source == assist.DRAFTED and profile is not None:
+                    remarks = assist.remarks_on(
+                        profile, answer, row.fact_ids,
+                        context=assist._context(
+                            session, listing, requirements_of(session, listing)
+                        )
+                        + f" {question}",
+                    )  # fmt: skip
+            row = assist.save_answer(
+                session, listing, question, answer, fact_ids, source, remarks=remarks, row=row
+            )
+            message = bank_message(row.question, row.answer, row.fact_ids) if to_bank else ""
+        return back(request, message=quote_plus(message), anchor="answers")
+
+    @app.post("/job/{listing_id}/answer/{answer_id}/{action}")
+    def answer_action(request: Request, listing_id: int, answer_id: int, action: str):
+        with Session(engine) as session:
+            row = get_answer(session, listing_id, answer_id)
+            message = ""
+            if action == "delete":
+                session.delete(row)
+                session.commit()
+            elif action == "bank":
+                message = bank_message(row.question, row.answer, row.fact_ids)
+            else:
+                raise HTTPException(404, "Unknown action")
+        return back(request, message=quote_plus(message), anchor="answers")
+
     # ----- reading postings ----------------------------------------------
 
     def read_one(session: Session, listing: Listing, *, force: bool = False) -> None:
@@ -487,20 +621,21 @@ def create_app(
     # ----- queue ---------------------------------------------------------
 
     @app.get("/", response_class=HTMLResponse)
-    def main_queue(request: Request):
+    def main_queue(request: Request, q: str = ""):
         with Session(engine) as session:
             listing = next_read(session, db.MAIN)
             return render_page(
-                request, "queue.html", session, mode="main", **card_context(session, listing)
+                request, "queue.html", session, mode="main", **card_context(session, listing, q)
             )
 
     @app.get("/set-aside/work", response_class=HTMLResponse)
-    def set_aside_queue(request: Request):
+    def set_aside_queue(request: Request, q: str = ""):
         with Session(engine) as session:
             listing = next_read(session, db.SET_ASIDE)
             return render_page(
-                request, "queue.html", session, mode="set-aside", **card_context(session, listing)
-            )
+                request, "queue.html", session, mode="set-aside",
+                **card_context(session, listing, q),
+            )  # fmt: skip
 
     @app.post("/job/{listing_id}/{action}")
     def act(request: Request, listing_id: int, action: str, note: str = Form("")):
@@ -542,13 +677,13 @@ def create_app(
             )  # fmt: skip
 
     @app.get("/job/{listing_id}", response_class=HTMLResponse)
-    def job_page(request: Request, listing_id: int):
+    def job_page(request: Request, listing_id: int, q: str = ""):
         with Session(engine) as session:
             listing = get_listing(session, listing_id)
             return render_page(
                 request, "job.html", session,
                 timeline=queue.timeline(session, listing.id),
-                **card_context(session, listing),
+                **card_context(session, listing, q),
             )  # fmt: skip
 
     # ----- tracker -------------------------------------------------------

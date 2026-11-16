@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ 'Set aside' if mode == 'set-aside' else 'Queue' }}{% endblock %}
+{% block mainclass %}{{ 'wide' if job and job.state == 'in_progress' }}{% endblock %}
 {% block content %}
 {% if mode == 'set-aside' %}<div class="toolbar"><h2>Working through set-aside jobs</h2><span class="spacer"></span><a href="/list/set-aside">See the whole list</a></div>{% endif %}
 {% if not job %}
@@ -9,6 +10,8 @@
     <p class="note">Press “Sync now” to check your sources, or add one on the <a href="/sources">Sources</a> page.</p>{% endif %}
   </div>
 {% else %}
+{% set applying = job.state == 'in_progress' %}
+{% if applying %}<div class="applygrid">{% endif %}
 <div class="card">
   {% include "_card.html" %}
   {% if job.state == 'in_progress' %}
@@ -31,6 +34,10 @@
   </div>
   {% endif %}
 </div>
+{% if applying %}
+<div class="card assistcard">{% include "_assist.html" %}</div>
+</div>
+{% endif %}
 {% endif %}
 <div class="toolbar">
   <form method="post" action="/undo"><button class="small" id="k-u">Undo last action<kbd>U</kbd></button></form>

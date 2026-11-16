@@ -237,8 +237,13 @@ def check_paragraph(
     profile: Profile,
     vocabulary: Vocabulary,
     context: str,
+    own_words: str = "",
 ) -> list[str]:
-    """Problems with one cover-letter paragraph. ``context`` describes the employer."""
+    """Problems with one cover-letter paragraph. ``context`` describes the employer.
+
+    ``own_words`` is text the applicant wrote themselves (saved answers, stories).
+    It backs a claim the same way a cited fact does.
+    """
     known = profile.facts()
     problems = [
         f"fact '{fact_id}' is not in the profile" for fact_id in fact_ids if fact_id not in known
@@ -250,6 +255,7 @@ def check_paragraph(
         for entry in profile.entries()
         if any(fact.id in fact_ids for fact in entry.facts)
     )
+    headings = f"{headings} {own_words}"
     return problems + check_text(
         text, profile=profile, facts=facts, vocabulary=vocabulary, heading=headings,
         context=context, min_overlap=0.0, max_chars=MAX_PARAGRAPH_CHARS,
